@@ -20,8 +20,10 @@ class _EVENT_TYPES(object):
     """
     Event types from the ``watchdog`` module.
     """
-    MODIFIED = 'modified'
+    CREATED = 'created'
     DELETED = 'deleted'
+    MODIFIED = 'modified'
+    MOVED = 'moved'
 
 
 class ActiveFile(object):
@@ -29,17 +31,17 @@ class ActiveFile(object):
     A file that has been modified and which is being processed.
     """
 
-    def __init__(self, path, event_type, t=None):
+    def __init__(self, path, event, t=None):
         self.lock = threading.Lock()
         self.path = path
         self.t0 = t or time.time()
         self.t1 = None
-        self.event_type = event_type
+        self.event = event
 
-    def _touch(self, event_type, t=None):
+    def _touch(self, event, t=None):
         with self.lock:
             self.t1 = t or time.time()
-            self.event_type = event_type
+            self.event = event
 
     def _reset(self):
         with self.lock:
@@ -69,17 +71,17 @@ class ActiveFiles(object):
         self.is_not_empty = threading.Condition(self.lock)
         self.is_stopping = threading.Condition(self.lock)
 
-    def touch(self, path, event_type, t=None):
+    def touch(self, event, t=None):
         """
         Mark a file as modified.
         """
         with self.is_not_empty:
             try:
-                self._files[path]._touch(event_type, t)
+                self._files[event.src_path]._touch(event, t)
             except KeyError:
-                f = ActiveFile(path, event_type, t)
-                self._files[path] = f
-                self._queue[path] = f.t0
+                f = ActiveFile(event.src_path, event, t)
+                self._files[event.src_path] = f
+                self._queue[event.src_path] = f.t0
                 self.is_not_empty.notify_all()
 
     def processed(self, path):
@@ -91,7 +93,7 @@ class ActiveFiles(object):
             if f.t1:
                 # File has been touched since processing started, reschedule
                 print '"%s" has been modified while being processed, rescheduling.' % path
-                self.touch(path, f.event_type, f.t1)
+                self.touch(f.event, f.t1)
             else:
                 print '"%s" has been processed.' % path
 
@@ -145,10 +147,14 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
         self._files = files
 
     def on_any_event(self, event):
-        if event.is_directory:
+        if event.is_directory or event.event_type == _EVENT_TYPES.CREATED:
+            # Dictionary events are ignored because we only track
+            # files. Creation events are ignored because they are
+            # automatically followed by a corresponding modification
+            # event.
             return
-        self._files.touch(event.src_path, event.event_type)
-        print 'Registered modification of "%s" (%r).' % (event.src_path,
+        self._files.touch(event)
+        print 'Registered modification of "%s" (%s).' % (event.src_path,
                                                          event.event_type)
 
 
@@ -163,8 +169,18 @@ class Storage(object):
         time.sleep(5)
 
     def store_deletion(self, path, t=None):
+        # From the ``watchdog`` docs:
+        #
+        #     Since the Windows API does not provide information about
+        #     whether an object is a file or a directory, delete events
+        #     for directories may be reported as a file deleted event.
         t = t or time.time()
         print 'Storing deletion of "%s".' % path
+        time.sleep(5)
+
+    def store_move(self, src_path, dest_path, t=None):
+        t = t or time.time()
+        print 'Storing move of "%s" to "%s".' % (src_path, dest_path)
         time.sleep(5)
 
 
@@ -195,12 +211,14 @@ class StorageDaemon(threading.Thread):
             # OK, but MODIFIED -> DELETED and similar stuff needs special
             # attention. It is probably OK to simply use the latest event type
             # but that should be double-checked.
-            if f.event_type == _EVENT_TYPES.MODIFIED:
+            if f.event.event_type == _EVENT_TYPES.MODIFIED:
                 self._storage.store_modification(f.path)
-            elif f.event_type == EVENT_TYPES.DELETED:
+            elif f.event.event_type == _EVENT_TYPES.DELETED:
                 self._storage.store_deletion(f.path)
+            elif f.event.event_type == _EVENT_TYPES.MOVED:
+                self._storage.store_move(f.path, f.event.dest_path)
             else:
-                raise ValueError('Unknown event type %r.' % f.event_type)
+                raise ValueError('Unknown event type %r.' % f.event.event_type)
             self._files.processed(f.path)
 
 
