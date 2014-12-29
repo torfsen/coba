@@ -12,8 +12,11 @@ import watchdog.observers
 import watchdog.events
 
 
-# Seconds to wait before storing a modified file.
-WAIT = 5
+# If subsequent modifications of a file are closer in time than
+# IDLE_WAIT then no backup is done. That is, a modified file is
+# only backupped once there hasn't been a modification for at
+# least IDLE_WAIT seconds.
+IDLE_WAIT = 5
 
 
 class _EVENT_TYPES(object):
@@ -34,19 +37,20 @@ class ActiveFile(object):
     def __init__(self, path, event, t=None):
         self.lock = threading.Lock()
         self.path = path
-        self.t0 = t or time.time()
-        self.t1 = None
+        self.time = t or time.time()
         self.event = event
+        self.force_backup = False
 
     def _touch(self, event, t=None):
         with self.lock:
-            self.t1 = t or time.time()
+            t = t or time.time()
+            if t - self.time > IDLE_WAIT:
+                print (('Time span between modifications of "%s" is longer ' +
+                       'than IDLE_WAIT, marking file for forced backup.') %
+                       self.path)
+                self.force_backup = True
+            self.time = t
             self.event = event
-
-    def _reset(self):
-        with self.lock:
-            self.t0 = self.t1
-            self.t1 = None
 
 
 class ActiveFiles(object):
@@ -77,11 +81,13 @@ class ActiveFiles(object):
         """
         with self.is_not_empty:
             try:
-                self._files[event.src_path]._touch(event, t)
+                f = self._files[event.src_path]
+                f._touch(event, t)
+                self._queue[event.src_path] = f.time
             except KeyError:
                 f = ActiveFile(event.src_path, event, t)
                 self._files[event.src_path] = f
-                self._queue[event.src_path] = f.t0
+                self._queue[event.src_path] = f.time
                 self.is_not_empty.notify_all()
 
     def processed(self, path):
@@ -90,10 +96,10 @@ class ActiveFiles(object):
         """
         with self.lock:
             f = self._files.pop(path)
-            if f.t1:
-                # File has been touched since processing started, reschedule
-                print '"%s" has been modified while being processed, rescheduling.' % path
-                self.touch(f.event, f.t1)
+            if f.force_backup:
+                # Backup was forced, reschedule to capture second modification
+                print 'Rescheduling "%s" after forced backup.' % f.path
+                self.touch(f.event, f.time)
             else:
                 print '"%s" has been processed.' % path
 
@@ -201,25 +207,38 @@ class StorageDaemon(threading.Thread):
 
     def run(self):
         for f in self._files:
-            pause = f.t0 + WAIT - time.time()
-            if pause > 0:
-                time.sleep(pause)
-            f._reset()
-            # FIXME: We need to compare the event type after the pause
-            # with the one from before the pause. If they differ we need
-            # to make sure that they are "compatible": MODIFIED -> MODIFIED is
-            # OK, but MODIFIED -> DELETED and similar stuff needs special
-            # attention. It is probably OK to simply use the latest event type
-            # but that should be double-checked.
-            if f.event.event_type == _EVENT_TYPES.MODIFIED:
-                self._storage.store_modification(f.path)
-            elif f.event.event_type == _EVENT_TYPES.DELETED:
-                self._storage.store_deletion(f.path)
-            elif f.event.event_type == _EVENT_TYPES.MOVED:
-                self._storage.store_move(f.path, f.event.dest_path)
+            if f.force_backup or f.event.event_type == _EVENT_TYPES.DELETED:
+                self._store(f)
             else:
-                raise ValueError('Unknown event type %r.' % f.event.event_type)
-            self._files.processed(f.path)
+                # f.time is the time of the last event in the current
+                # modification.
+                last_time = f.time
+                pause = last_time + IDLE_WAIT - time.time()
+                if pause > 0:
+                    print 'Waiting for IDLE_WAIT of "%s".' % f.path
+                    time.sleep(pause)
+                if f.time == last_time or f.force_backup:
+                    # Either no further modification happened during
+                    # the pause or the event belongs to a new
+                    # modification.
+                    self._store(f)
+                else:
+                    # File was modified again inside the IDLE_WAIT
+                    # window, we reschedule.
+                    print ('Rescheduling "%s" after modification within ' +
+                           'IDLE_WAIT.') % f.path
+                    self._files.touch(f.event, f.time)
+
+    def _store(self, f):
+        if f.event.event_type == _EVENT_TYPES.MODIFIED:
+            self._storage.store_modification(f.path)
+        elif f.event.event_type == _EVENT_TYPES.DELETED:
+            self._storage.store_deletion(f.path)
+        elif f.event.event_type == _EVENT_TYPES.MOVED:
+            self._storage.store_move(f.path, f.event.dest_path)
+        else:
+            raise ValueError('Unknown event type %r.' % f.event.event_type)
+        self._files.processed(f.path)
 
 
 def main(path='.'):
