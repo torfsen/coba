@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-Disk-based blob store.
+A blob store based on LibCloud storage.
 """
 
 import collections
@@ -10,29 +10,89 @@ import errno
 import gzip
 import hashlib
 import os
-import os.path
-import shutil
 import tempfile
 
+import libcloud.storage.drivers.local
+import libcloud.storage.types
 
-def _hash_and_compress(in_file, out_file, hasher=hashlib.sha1, block_size=2**20):
-    """
-    Compress a file and compute its hash on the fly.
 
-    Reads content from ``in_file`` in chunks of ``block_size`` bytes.
-    The content is compressed and hashed on the fly. The compressed
-    output is stored in ``out_file`` and the hex digest of the hash is
-    returned.
+__all__ = ['BlobStore', 'local_storage_driver']
+
+
+def _get_container(driver, name):
     """
-    h = hasher()
-    with gzip.GzipFile(filename='', fileobj=out_file) as gzip_file:
-        while True:
-            block = in_file.read(block_size)
-            if not block:
-                break
-            h.update(block)
-            gzip_file.write(block)
-    return h.hexdigest()
+    Get a container, create it if necessary.
+    """
+    try:
+        return driver.get_container(name)
+    except libcloud.storage.types.ContainerDoesNotExistError:
+        return driver.create_container(name)
+
+
+def _binary_file_iterator(f, block_size=2**20):
+    """
+    Generator for iterating over binary files in blocks.
+
+    ``f`` is a file opened in binary mode. The generator reads blocks
+    from the file, where ``block_size`` is the maximum block size.
+    """
+    while True:
+        block = f.read(block_size)
+        if not block:
+            return
+        yield block
+
+
+def _compress_and_upload(container, data, block_size=2**20):
+    """
+    Compress data, upload it and return hash.
+
+    ``data`` is either a string or an open file-like object. Its
+    content is read and compressed to a local temporary file. During
+    the compression, the data's hash is computed on the fly.
+
+    Once the data is compressed and the hash is known the compressed
+    data is streamed to the given container. The hash is used as the
+    object name.
+    """
+    if not hasattr(data, 'read'):
+        # Not a file, assume string
+        data = cStringIO.StringIO(data)
+    hasher = hashlib.sha1()
+    # We need to compress the data to a local file first in order to
+    # obtain the data's hash.
+    with tempfile.TemporaryFile() as temp_file:
+        with gzip.GzipFile(filename='', fileobj=temp_file) as gzip_file:
+            while True:
+                block = data.read(block_size)
+                if not block:
+                    break
+                hasher.update(block)
+                gzip_file.write(block)
+        hashsum = hasher.hexdigest()
+        temp_file.seek(0)
+        iterator = _binary_file_iterator(temp_file)
+        container.upload_object_via_stream(iterator, hashsum)
+    return hashsum
+
+
+def _download_and_decompress(container, hashsum):
+    """
+    Download data and decompress it.
+
+    The data of the object identified by the given hashsum is
+    downloaded to a local temporary file and decompressed.
+
+    The return value is an instance of ``gzip.GzipFile`` which
+    provides the decompression. The temporary file is deleted
+    automatically when the Gzip wrapper file is closed.
+    """
+    obj = container.get_object(hashsum)
+    temp_file = tempfile.NamedTemporaryFile()
+    for block in container.download_object_as_stream(obj):
+        temp_file.write(block)
+    temp_file.seek(0)
+    return gzip.GzipFile(fileobj=temp_file, mode='rb')
 
 
 _undefined = object()
@@ -42,49 +102,21 @@ class BlobStore(collections.Mapping):
     """
     A blob store.
 
-    This blob store allows you to store arbitrary data on disk. Entries
-    are identified by their hash, which is computed when data is stored
-    and can then be used to retrieve the data at a later point.
+    This blob store allows you to store arbitrary data using a LibCloud
+    storage driver. Data blobs are identified by their hash, which is
+    computed when data is stored and can then be used to retrieve the
+    data at a later point.
     """
 
-    @classmethod
-    def create(cls, path):
-        """
-        Create a new blob store.
+    _CONTAINER = 'coba-blobs'
 
-        This creates the necessary directory structure in the given
-        directory. The directory must not exist already.
+    def __init__(self, driver):
+        """
+        Constructor.
 
-        Returns an instance of ``BlobStore``.
+        ``driver`` is a ``libcloud.storage.base.StorageDriver``.
         """
-        if os.path.isdir(path):
-            raise ValueError('The directory "%s" already exists.' % path)
-        os.mkdir(path)
-        for d in ['blobs', 'tmp']:
-            os.mkdir(os.path.join(path, d))
-        return cls(path)
-
-    def __init__(self, path):
-        """
-        Access an existing blob store.
-
-        ``path`` is the path to an existing blob store directory as
-        created using ``create``.
-        """
-        if not os.path.isdir(path):
-            raise ValueError('The directory "%s" does not exist.' % path)
-        self.path = path
-        self._blob_dir = os.path.join(path, 'blobs')
-        if not os.path.isdir(self._blob_dir):
-            raise ValueError('The directory "%s" is not a valid blob store.' %
-                             path)
-        self._temp_dir = os.path.join(path, 'tmp')
-
-    def _split_hash(self, h):
-        """
-        Split a hash into directory and filename parts.
-        """
-        return h[:2], h[2:]
+        self._container = _get_container(driver, self._CONTAINER)
 
     def put(self, data):
         """
@@ -95,31 +127,20 @@ class BlobStore(collections.Mapping):
         the content's hash is returned. The hash can later be used to
         retrieve the data from the blob store.
         """
-        if not hasattr(data, 'read'):
-            # Not a file, assume string
-            data = cStringIO.StringIO(data)
-        # We want to use the data's hash for constructing the output
-        # filename. However, the hash is only available after the data
-        # has been compressed (to avoid going over the data twice).
-        # Therefore we compress the data to a temporary file and move
-        # it upon completion. Since the temporary file resides inside
-        # the blob store directory (and hence on the same filesystem)
-        # moving the file should be very efficient.
-        temp_file = tempfile.NamedTemporaryFile(dir=self._temp_dir,
-                                                delete=False)
+        return _compress_and_upload(self._container, data)
+
+    def get_file(self, hashsum):
+        """
+        Retrieve data from the blob store in the form of a file-object.
+
+        Returns data that was previously stored via ``put``. The return
+        value is a ``gzip.GzipFile`` instance which behaves like a
+        standard Python file object and performs the decompression.
+        """
         try:
-            hashsum = _hash_and_compress(data, temp_file)
-            dirname, filename = self._split_hash(hashsum)
-            dirpath = os.path.join(self._blob_dir, dirname)
-            if not os.path.isdir(dirpath):
-                os.mkdir(dirpath)
-            os.rename(temp_file.name, os.path.join(dirpath, filename))
-        finally:
-            try:
-                os.unlink(temp_file.name)
-            except:
-                pass
-        return hashsum
+            return _download_and_decompress(self._container, hashsum)
+        except libcloud.storage.types.ObjectDoesNotExistError:
+            raise KeyError('No blob for hashsum "%s".' % hashsum)
 
     def get(self, hashsum, default=_undefined):
         """
@@ -134,17 +155,13 @@ class BlobStore(collections.Mapping):
 
         ``bs.get(h)`` is equivalent to ``bs[h]``.
         """
-        dirname, filename = self._split_hash(hashsum)
         try:
-            with gzip.open(os.path.join(self._blob_dir, dirname,
-                           filename)) as f:
-                return f.read()
-        except IOError as e:
-            if e.errno == errno.ENOENT:
+            with self.get_file(hashsum) as gzip_file:
+                return gzip_file.read()
+        except KeyError:
                 if default is _undefined:
-                    raise KeyError('No blob for hashsum "%s".' % hashsum)
+                    raise
                 return default
-            raise
 
     def __getitem__(self, hashsum):
         return self.get(hashsum)
@@ -156,23 +173,18 @@ class BlobStore(collections.Mapping):
         raise TypeError('Indexed writing is not possible. Use "put".')
 
     def __iter__(self):
-        for root, dirnames, filenames in os.walk(self._blob_dir):
-            base = os.path.basename(root)
-            for filename in filenames:
-                yield base + filename
+        for obj in self._container.list_objects():
+            yield obj.name
 
     def __len__(self):
-        file_count = 0
-        for root, dirnames, filenames in os.walk(self._blob_dir):
-            file_count += len(filenames)
-        return file_count
+        return len(self._container.list_objects())
 
     def clear(self):
         """
         Remove all entries.
         """
-        shutil.rmtree(self._blob_dir)
-        os.mkdir(self._blob_dir)
+        for obj in self._container.list_objects():
+            self._container.delete_object(obj)
 
     def remove(self, hashsum):
         """
@@ -181,10 +193,23 @@ class BlobStore(collections.Mapping):
         Removes the entry with the given hash. ``bs.remove(h)`` is
         equivalent to ``del bs[h]``.
         """
-        dirname, filename = self._split_hash(hashsum)
-        try:
-            os.unlink(os.path.join(self._blob_dir, dirname, filename))
-        except IOError as e:
-            if e.errno == errno.ENOENT:
-                raise KeyError('No blob for hashsum "%s".' % hashsum)
+        obj = self._container.get_object(hashsum)
+        self._container.delete_object(obj)
+
+
+def local_storage_driver(path):
+    """
+    Create a local LibCloud storage driver.
+
+    ``path`` is the directory in which the data is stored. It is
+    automatically created if it does not exist.
+
+    Returns an instance of
+    ``libcloud.storage.drivers.local.LocalStorageDriver``.
+    """
+    try:
+        os.mkdir(path)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
             raise
+    return libcloud.storage.drivers.local.LocalStorageDriver(path)
