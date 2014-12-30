@@ -7,6 +7,7 @@ A blob store based on LibCloud storage.
 import collections
 import cStringIO
 import errno
+import json
 import gzip
 import hashlib
 import os
@@ -16,7 +17,7 @@ import libcloud.storage.drivers.local
 import libcloud.storage.types
 
 
-__all__ = ['BlobStore', 'local_storage_driver']
+__all__ = ['BlobStore', 'JSONStore', 'local_storage_driver']
 
 
 def _get_container(driver, name):
@@ -95,7 +96,115 @@ def _download_and_decompress(container, hashsum):
     return gzip.GzipFile(fileobj=temp_file, mode='rb')
 
 
+def _upload_json(container, objname, data):
+    s = json.dumps(data, separators=(',',':'))
+    container.upload_object_via_stream(s, objname)
+
+
+def _download_json(container, objname):
+    obj = container.get_object(objname)
+    s = cStringIO.StringIO()
+    for chunk in container.download_object_as_stream(obj):
+        s.write(chunk)
+    s.seek(0)
+    return json.load(s)
+
+
 _undefined = object()
+
+class _Store(collections.Mapping):
+    """
+    Abstract data store for LibCloud storage.
+    """
+
+    def __init__(self, driver, container_name):
+        """
+        Constructor.
+
+        ``driver`` is a LibCloud storage driver. ``container_name`` is
+        the name of the container to use. If the container does not
+        exist it is created.
+        """
+        self._container = _get_container(driver, container_name)
+
+    def get(self, key, default=_undefined):
+        """
+        Retrieve data from the store.
+
+        If no entry for the given key exists a ``KeyError`` is raised
+        unless ``default`` is provided, in which case that value is
+        returned instead.
+        """
+        try:
+            return self[key]
+        except KeyError:
+            if default is _undefined:
+                raise
+            return default
+
+    def _get(self, key):
+        """
+        Internal data retrieval.
+
+        Subclasses need to overwrite this with the actual data
+        retrieval code. ``get`` is a simple wrapper around ``_get``
+        and just adds the handling of default values.
+        """
+        raise NotImplementedError()
+
+    def remove(self, key):
+        """
+        Remove an entry from the store.
+        """
+        try:
+            obj = self._container.get_object(path)
+        except libcloud.storage.types.ObjectDoesNotExistError:
+            self._container.delete_object(obj)
+
+    def clear(self):
+        """
+        Remove all entries from the store.
+        """
+        for obj in self._container.list_objects():
+            self._container.delete_object(obj)
+
+    def __getitem__(self, key):
+        return self._get(key)
+
+    def __delitem__(self, key):
+        return self.remove(key)
+
+    def __iter__(self):
+        for obj in self._container.list_objects():
+            yield obj.name
+
+    def __len__(self):
+        return len(self._container.list_objects())
+
+
+class JSONStore(_Store):
+    """
+    Store for JSON data.
+    """
+
+    def put(self, key, value):
+        """
+        Store data.
+
+        ``value`` is anything that the ``json`` module can turn into a
+        JSON-encoded string. ``key`` is the name under which the data
+        is stored.
+        """
+        return _upload_json(self._container, key, value)
+
+    def _get(self, key):
+        try:
+            return _download_json(self._container, key)
+        except libcloud.storage.types.ObjectDoesNotExistError:
+            raise KeyError('No entry for key "%s".' % key)
+
+    def __setitem__(self, key, value):
+        return self.put(key, value)
 
 
 class BlobStore(collections.Mapping):
@@ -107,16 +216,6 @@ class BlobStore(collections.Mapping):
     computed when data is stored and can then be used to retrieve the
     data at a later point.
     """
-
-    _CONTAINER = 'coba-blobs'
-
-    def __init__(self, driver):
-        """
-        Constructor.
-
-        ``driver`` is a ``libcloud.storage.base.StorageDriver``.
-        """
-        self._container = _get_container(driver, self._CONTAINER)
 
     def put(self, data):
         """
@@ -142,59 +241,12 @@ class BlobStore(collections.Mapping):
         except libcloud.storage.types.ObjectDoesNotExistError:
             raise KeyError('No blob for hashsum "%s".' % hashsum)
 
-    def get(self, hashsum, default=_undefined):
-        """
-        Retrieve data from the blob store.
-
-        Returns data that was previously stored via ``put``.
-        ``hashsum`` is the data's hash as returned by ``put``.
-
-        If there is no data stored for the given hash then ``KeyError``
-        is raised, unless ``default`` is set in which case that value
-        is returned instead.
-
-        ``bs.get(h)`` is equivalent to ``bs[h]``.
-        """
-        try:
-            with self.get_file(hashsum) as gzip_file:
-                return gzip_file.read()
-        except KeyError:
-                if default is _undefined:
-                    raise
-                return default
-
-    def __getitem__(self, hashsum):
-        return self.get(hashsum)
-
-    def __delitem__(self, hashsum):
-        return self.remove(hashsum)
+    def _get(self, hashsum):
+        with self.get_file(hashsum) as gzip_file:
+            return gzip_file.read()
 
     def __setitem__(self, key, value):
         raise TypeError('Indexed writing is not possible. Use "put".')
-
-    def __iter__(self):
-        for obj in self._container.list_objects():
-            yield obj.name
-
-    def __len__(self):
-        return len(self._container.list_objects())
-
-    def clear(self):
-        """
-        Remove all entries.
-        """
-        for obj in self._container.list_objects():
-            self._container.delete_object(obj)
-
-    def remove(self, hashsum):
-        """
-        Remove an entry.
-
-        Removes the entry with the given hash. ``bs.remove(h)`` is
-        equivalent to ``del bs[h]``.
-        """
-        obj = self._container.get_object(hashsum)
-        self._container.delete_object(obj)
 
 
 def local_storage_driver(path):
