@@ -62,7 +62,7 @@ def _upload_from_file(container, objname, fobj):
     Upload file content to a LibCloud object.
     """
     fobj.seek(0)
-    iterator = _binary_file_iterator(fobj)
+    iterator = binary_file_iterator(fobj)
     container.upload_object_via_stream(iterator, objname)
 
 
@@ -131,7 +131,7 @@ class CompressAndHashTransformer(CompressTransformer):
     """
 
     def transform(self, key, value):
-        hasher = hashlib.sha1()
+        hasher = hashlib.sha256()
         temp_file = tempfile.TemporaryFile()
         value.seek(0)
         with gzip.GzipFile(filename='', fileobj=temp_file,
@@ -183,7 +183,7 @@ class ChainedTransformer(Transformer):
 
     def transform(self, key, value):
         for t in self.transformers:
-            key, value = t(key, value)
+            key, value = t.transform(key, value)
         return key, value
 
     def invert(self, value):
