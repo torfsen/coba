@@ -28,6 +28,7 @@ __all__ = [
     'JSONStore',
     'JSONTransformer',
     'local_storage_driver',
+    'StringStore',
     'Transformer',
     'TransformingStore',
 ]
@@ -51,7 +52,7 @@ def _download_to_temp_file(container, objname):
     """
     obj = container.get_object(objname)
     temp_file = tempfile.TemporaryFile()
-    for block in container.download_object_as_stream(obj):
+    for block in obj.as_stream():
         temp_file.write(block)
     temp_file.seek(0)
     return temp_file
@@ -263,6 +264,25 @@ class AbstractStore(collections.Mapping):
 
     def __len__(self):
         return len(self._container.list_objects())
+
+
+class StringStore(AbstractStore):
+    """
+    Store for storing plain strings.
+    """
+
+    def put(self, key, value):
+        self._container.upload_object_via_stream(value, key)
+        return key
+
+    __setitem__ = put
+
+    def _get(self, key):
+        try:
+            obj = self._container.get_object(key)
+        except libcloud.storage.types.ObjectDoesNotExistError:
+            raise KeyError(key)
+        return ''.join(obj.as_stream())
 
 
 class TransformingStore(AbstractStore):

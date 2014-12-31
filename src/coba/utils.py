@@ -4,8 +4,10 @@
 Various utilities.
 """
 
+import os.path
 
-__all__ = ['binary_file_iterator']
+
+__all__ = ['binary_file_iterator', 'normalize_path']
 
 
 def binary_file_iterator(f, block_size=2**20):
@@ -21,3 +23,9 @@ def binary_file_iterator(f, block_size=2**20):
             return
         yield block
 
+
+def normalize_path(path):
+    """
+    Normalize file path.
+    """
+    return os.path.normcase(os.path.realpath(path))
