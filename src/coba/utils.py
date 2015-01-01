@@ -6,6 +6,8 @@ Various utilities.
 
 import os.path
 
+import pathlib
+
 
 __all__ = ['binary_file_iterator', 'normalize_path']
 
@@ -27,5 +29,10 @@ def binary_file_iterator(f, block_size=2**20):
 def normalize_path(path):
     """
     Normalize file path.
+
+    ``path`` can either be a string or a ``pathlib.Path`` instance.
+
+    The return value is a ``Path`` instance.
     """
-    return os.path.normcase(os.path.realpath(path))
+    return pathlib.Path(os.path.normcase(os.path.realpath(str(path))))
+

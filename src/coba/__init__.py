@@ -4,265 +4,259 @@
 Continuous backups.
 """
 
+import datetime
+import errno
+import json
+import os
 import threading
 import time
 
-import pqdict
-import watchdog.observers
-import watchdog.events
+import libcloud.storage.drivers.local
+import pathlib
 
+from .stores import PathStore, BlobStore
+from .utils import normalize_path
+from .watch import Watcher
 
-# If subsequent modifications of a file are closer in time than
-# IDLE_WAIT then no backup is done. That is, a modified file is
-# only backupped once there hasn't been a modification for at
-# least IDLE_WAIT seconds.
-IDLE_WAIT = 5
-
-
-class _EVENT_TYPES(object):
+class _JSONEncoder(json.JSONEncoder):
     """
-    Event types from the ``watchdog`` module.
+    JSON encoder for file information classes.
     """
-    CREATED = 'created'
-    DELETED = 'deleted'
-    MODIFIED = 'modified'
-    MOVED = 'moved'
+    def default(self, obj):
+        if isinstance(obj, Revision):
+            return {'timestamp': obj.timestamp, 'hashsum': obj.hashsum}
+        return super(_JSONEncoder, self).default(obj)
 
 
-class ActiveFile(object):
+class File(object):
     """
-    A file that has been modified and which is being processed.
+    A file.
+
+    This class represents a (potentially non-existing) file on the
+    local disk. It can be used to create new backups of the file
+    or to access the file's revisions.
+
+    To check if a file with this path currently exists on the local
+    disk use the ``exists`` property.
+
+    The ``watched`` property tells you whether this path is being
+    watched by coba. Note that a path can be watched without existing
+    (in that case the corresponding file would be stored upon
+    creation).
     """
 
-    def __init__(self, path, event, t=None):
+    def __init__(self, coba, path):
+        """
+        Constructor.
+
+        Do not instantiate this class directly. Use ``Coba.file`` or
+        ``Coba.files`` instead.
+        """
+        self._coba = coba
+        self.path = normalize_path(path)
         self.lock = threading.Lock()
-        self.path = path
-        self.time = t or time.time()
-        self.event = event
-        self.force_backup = False
+        self._event = None
+        self._force_backup = False
 
-    def _touch(self, event, t=None):
+    def _register_event(self, event):
         with self.lock:
-            t = t or time.time()
-            if t - self.time > IDLE_WAIT:
+            if not self._event:
+                self._event = event
+                return
+            if event.time - self._event.time > self._coba.idle_wait_time:
                 print (('Time span between modifications of "%s" is longer ' +
-                       'than IDLE_WAIT, marking file for forced backup.') %
-                       self.path)
-                self.force_backup = True
-            self.time = t
-            self.event = event
+                       'than the idle wait time, marking file for forced ' +
+                       'backup.') % self.path)
+                self._force_backup = True
+            self._event = event
+
+    def _object_hook(self, d):
+        """
+        JSON object hook.
+        """
+        try:
+            return Revision(self, d['timestamp'], d['hashsum'])
+        except KeyError:
+            return d
+
+    def get_revisions(self):
+        """
+        Get the file's revisions.
+
+        Returns a list of the file's revisions.
+        """
+        try:
+            s = self._coba._info_store[str(self.path)]
+        except KeyError:
+            return []
+        return json.loads(s, object_hook=self._object_hook)
+
+    def _set_revisions(self, revisions):
+        """
+        Set the file's revisions.
+
+        ``revisions`` is a list of instances of ``Revision``.
+        """
+        self._coba._info_store[str(self.path)] = json.dumps(
+            revisions, separators=(',', ':'), cls=_JSONEncoder)
+
+    def backup(self):
+        """
+        Create a new revision.
+
+        The current content of the file is stored in the
+        storage. The corresponding revision is returned.
+        """
+        print 'Performing backup of "%s".' % self.path
+        with self.path.open('rb') as f:
+            hashsum = self._coba._blob_store.put(f)
+        try:
+            revisions = self.get_revisions()
+            revision = Revision(self, time.time(), hashsum)
+            revisions.append(revision)
+            self._set_revisions(revisions)
+            return revision
+        except:
+            self._coba._blob_store.remove(hashsum)
+            raise
+
+    @property
+    def exists(self):
+        return self.path.is_file()
+
+    @property
+    def watched(self):
+        for watched_dir in self._coba.watched_dirs:
+            if watched_dir in self.path.parents:
+                return True
+        return False
+
+    def __str__(self):
+        return str(self.path)
+
+    def __repr__(self):
+        return '%s(%r)' % (self.__class__.__name__, str(self.path))
 
 
-class ActiveFiles(object):
+class Revision(object):
     """
-    Manager for active files.
-
-    This class provides the communication between incoming file system
-    events (from ``EventHandler``) and the storage of the corresponding
-    file modifications (by ``StorageDaemon``).
-
-    Iteration over an instance yields active files in the order of their
-    unprocessed modifications in an infinite loop (when there are no
-    active files the iterator blocks). Use the ``join`` method to
-    automatically exit the loop once all files have been processed.
-    """
-
-    def __init__(self):
-        self._files = {}
-        self._queue = pqdict.PQDict()
-        self._stop = False
-        self.lock = threading.RLock()
-        self.is_not_empty = threading.Condition(self.lock)
-        self.is_stopping = threading.Condition(self.lock)
-
-    def touch(self, event, t=None):
-        """
-        Mark a file as modified.
-        """
-        with self.is_not_empty:
-            try:
-                f = self._files[event.src_path]
-                f._touch(event, t)
-                self._queue[event.src_path] = f.time
-            except KeyError:
-                f = ActiveFile(event.src_path, event, t)
-                self._files[event.src_path] = f
-                self._queue[event.src_path] = f.time
-                self.is_not_empty.notify_all()
-
-    def processed(self, path):
-        """
-        Mark a file as processed.
-        """
-        with self.lock:
-            f = self._files.pop(path)
-            if f.force_backup:
-                # Backup was forced, reschedule to capture second modification
-                print 'Rescheduling "%s" after forced backup.' % f.path
-                self.touch(f.event, f.time)
-            else:
-                print '"%s" has been processed.' % path
-
-    def next(self):
-        """
-        Get next file to be processed.
-
-        This method returns the file with the oldest unprocessed
-        modification. If there are no active files then the call blocks
-        until the next call to ``touch`` is made. See ``join`` for
-        breaking the block.
-        """
-        with self.is_not_empty:
-            while not self._queue:
-                if self._stop:
-                    raise StopIteration
-                self.is_not_empty.wait(1)
-            return self._files[self._queue.popitem()[0]]
-
-    def __iter__(self):
-        return self
-
-    def join(self):
-        """
-        Block until queue is empty.
-
-        This method blocks until the list of active files is empty.
-        Once this is the case, calling ``next`` raises ``StopIteration``
-        instead of blocking. Blocking calls to ``next`` that were made
-        before the call to ``join`` are terminated in the same way.
-
-        New events are still accepted while the active files are being
-        processed. Make sure to first stop the event provider before
-        calling ``join``, otherwise the event provider might keep
-        ``join`` from exiting by always adding new events.
-        """
-        with self.is_not_empty:
-            self._stop = True
-            self.is_stopping.notify_all()
-            while self._queue:
-                self.is_not_empty.wait()
-
-
-class EventHandler(watchdog.events.FileSystemEventHandler):
-    """
-    Event handler for file system events.
+    A revision of a file.
     """
 
-    def __init__(self, files):
-        super(EventHandler, self).__init__()
-        self._files = files
+    def __init__(self, file, timestamp, hashsum):
+        """
+        Constructor.
 
-    def on_any_event(self, event):
-        if event.is_directory or event.event_type == _EVENT_TYPES.CREATED:
-            # Dictionary events are ignored because we only track
-            # files. Creation events are ignored because they are
-            # automatically followed by a corresponding modification
-            # event.
-            return
-        self._files.touch(event)
-        print 'Registered modification of "%s" (%s).' % (event.src_path,
-                                                         event.event_type)
+        Do not instantiate this class directly. Use
+        ``File.get_revisions`` instead.
+        """
+        self.file = file
+        self.timestamp = timestamp
+        self.hashsum = hashsum
+
+    def restore(self, path=None, block_size=2**20):
+        """
+        Restore the revision.
+
+        The content of the revision is written to disk. By default
+        the original filename is used, provide ``path`` to restore
+        the revision to a different location. ``path`` can either be
+        a string or a ``pathlib.Path`` instance.
+        """
+        path = pathlib.Path(path or self.file.path)
+        with self.file._coba._blob_store.get_file(self.hashsum) as in_file:
+            with path.open('wb') as out_file:
+                while True:
+                    block = in_file.read(block_size)
+                    if not block:
+                        break
+                    out_file.write(block)
+
+    def __repr__(self):
+        p = str(self.file.path)
+        d = datetime.datetime.fromtimestamp(self.timestamp).isoformat(' ')
+        return "%s(%r, '%s')" % (self.__class__.__name__, p, d)
 
 
-class Storage(object):
+class Coba(object):
     """
-    Storage system for recording file modifications.
-    """
+    Main class of coba.
 
-    def store_modification(self, path, t=None):
-        t = t or time.time()
-        print 'Storing modification of "%s".' % path
-        time.sleep(5)
-
-    def store_deletion(self, path, t=None):
-        # From the ``watchdog`` docs:
-        #
-        #     Since the Windows API does not provide information about
-        #     whether an object is a file or a directory, delete events
-        #     for directories may be reported as a file deleted event.
-        t = t or time.time()
-        print 'Storing deletion of "%s".' % path
-        time.sleep(5)
-
-    def store_move(self, src_path, dest_path, t=None):
-        t = t or time.time()
-        print 'Storing move of "%s" to "%s".' % (src_path, dest_path)
-        time.sleep(5)
-
-
-class StorageDaemon(threading.Thread):
-    """
-    Daemon for storing file modifications.
-
-    File modifications are taken from the event list (see
-    ``ActiveFiles``) and stored (see ``Storage``). To avoid storing
-    frequently changing files too often there is a minimum pause
-    between storage operations for the same file (see ``WAIT``).
+    This class assembles the different parts of the coba systems and
+    offers a high-level interface for perfoming continuous backups.
     """
 
-    def __init__(self, storage, files, *args, **kwargs):
-        super(StorageDaemon, self).__init__(*args, **kwargs)
-        self._storage = storage
-        self._files = files
+    def __init__(self, driver, watched_dirs=None):
+        """
+        Constructor.
 
-    def run(self):
-        for f in self._files:
-            if f.force_backup or f.event.event_type == _EVENT_TYPES.DELETED:
-                self._store(f)
-            else:
-                # f.time is the time of the last event in the current
-                # modification.
-                last_time = f.time
-                pause = last_time + IDLE_WAIT - time.time()
-                if pause > 0:
-                    print 'Waiting for IDLE_WAIT of "%s".' % f.path
-                    time.sleep(pause)
-                if f.time == last_time or f.force_backup:
-                    # Either no further modification happened during
-                    # the pause or the event belongs to a new
-                    # modification.
-                    self._store(f)
-                else:
-                    # File was modified again inside the IDLE_WAIT
-                    # window, we reschedule.
-                    print ('Rescheduling "%s" after modification within ' +
-                           'IDLE_WAIT.') % f.path
-                    self._files.touch(f.event, f.time)
+        ``driver`` is a LibCloud storage driver and ``watched_dirs`` is
+        a list of directories to be put under continuous backup. The
+        directories must be disjoint, i.e. no directory should contain
+        an other one.
+        """
+        self._blob_store = BlobStore(driver, 'coba-blobs')
+        self._info_store = PathStore(driver, 'coba-info')
+        self.watched_dirs = [pathlib.Path(d) for d in (watched_dirs or ['.'])]
+        self.idle_wait_time = 5
+        self.watcher = Watcher(self)
 
-    def _store(self, f):
-        if f.event.event_type == _EVENT_TYPES.MODIFIED:
-            self._storage.store_modification(f.path)
-        elif f.event.event_type == _EVENT_TYPES.DELETED:
-            self._storage.store_deletion(f.path)
-        elif f.event.event_type == _EVENT_TYPES.MOVED:
-            self._storage.store_move(f.path, f.event.dest_path)
-        else:
-            raise ValueError('Unknown event type %r.' % f.event.event_type)
-        self._files.processed(f.path)
+    def start(self):
+        """
+        Start the continuous backups.
+        """
+        self.watcher.start()
+
+    def stop(self):
+        """
+        Stop the backups.
+        """
+        self.watcher.stop()
+
+    def files(self):
+        """
+        List stored files.
+
+        This generator yields all files in the storage.
+        """
+        for path in self._info_store:
+            yield File(self, path)
+
+    def file(self, path):
+        """
+        Get information about a file.
+
+        Returns an instance of ``File`` for the local file with the
+        given path.
+        """
+        return File(self, path)
+
+    def loop(self):
+        """
+        Start the backup and loop until CTRL+C.
+        """
+        self.start()
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            pass
+        self.stop()
 
 
-def main(path='.'):
-    files = ActiveFiles()
-    storage = Storage()
+def local_storage_driver(path):
+    """
+    Create a local LibCloud storage driver.
 
-    event_handler = EventHandler(files)
-    observer = watchdog.observers.Observer()
-    observer.schedule(event_handler, path, recursive=True)
-    observer.start()
+    ``path`` is the directory in which the data is stored. It is
+    automatically created if it does not exist.
 
-    storage_daemon = StorageDaemon(storage, files)
-    storage_daemon.start()
-
-    print "Waiting for events."
+    Returns an instance of
+    ``libcloud.storage.drivers.local.LocalStorageDriver``.
+    """
     try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print "Received CTRL+C, stopping observer."
-        observer.stop()
-    print "Waiting for observer to process remaining events."
-    observer.join()
-    print "Waiting for storage handler to process remaining files."
-    files.join()
-    storage_daemon.join()
-    print "Done."
+        os.mkdir(path)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
+    return libcloud.storage.drivers.local.LocalStorageDriver(path)

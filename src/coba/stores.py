@@ -6,17 +6,14 @@ Data stores based on LibCloud storage.
 
 import collections
 import cStringIO
-import errno
 import json
 import gzip
 import hashlib
-import os
 import tempfile
 
-import libcloud.storage.drivers.local
 import libcloud.storage.types
 
-from .utils import binary_file_iterator
+from .utils import binary_file_iterator, normalize_path
 
 
 __all__ = [
@@ -28,6 +25,7 @@ __all__ = [
     'JSONStore',
     'JSONTransformer',
     'local_storage_driver',
+    'PathStore',
     'StringStore',
     'Transformer',
     'TransformingStore',
@@ -399,19 +397,45 @@ class BlobStore(TransformingStore):
         raise TypeError('Indexed writing is not possible. Use "put".')
 
 
-def local_storage_driver(path):
+class PathStore(StringStore):
     """
-    Create a local LibCloud storage driver.
+    Store for storing plain strings with support for paths as keys.
 
-    ``path`` is the directory in which the data is stored. It is
-    automatically created if it does not exist.
-
-    Returns an instance of
-    ``libcloud.storage.drivers.local.LocalStorageDriver``.
+    This is basically a ``StringStore`` but with additional plumbing to
+    allow paths to be used as keys.
     """
-    try:
-        os.mkdir(path)
-    except OSError as e:
-        if e.errno != errno.EEXIST:
-            raise
-    return libcloud.storage.drivers.local.LocalStorageDriver(path)
+
+    def _path2key(self, path):
+        """
+        Convert a path to a key.
+        """
+        path = str(normalize_path(path))
+        assert path.startswith('/')
+        # We need to return the leading slash from the path to fake a
+        # relative path. Absolute paths are buggy or not supported in
+        # many LibCloud storage drivers.
+        return path[1:]
+
+    def _key2path(self, key):
+        """
+        Convert a key to a path.
+        """
+        return '/' + key
+
+    def put(self, path, value):
+        key = self._path2key(path)
+        super(PathStore, self).put(key, value)
+        return path
+
+    __setitem__ = put
+
+    def _get(self, path):
+        return super(PathStore, self)._get(self._path2key(path))
+
+    def remove(self, path):
+        return super(PathStore, self).remove(self._path2key(path))
+
+    def __iter__(self):
+        for obj in self._container.list_objects():
+            yield self._key2path(obj.name)
+
