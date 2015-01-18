@@ -1,4 +1,7 @@
-venv/
+/build/
+/dist/
+/venv/
+/src/coba.egg-info/
 
 *.swp
 *.pyc
