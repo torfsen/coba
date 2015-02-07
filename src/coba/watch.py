@@ -8,6 +8,7 @@ import threading
 import time
 
 import pqdict
+import service
 import watchdog.observers
 import watchdog.events
 
@@ -250,3 +251,23 @@ class Watcher(object):
         self._storage_thread.join()
         print "Watcher is stopped."
 
+class Service(service.Service):
+    """
+    The coba background daemon.
+    """
+    def __init__(self, coba):
+        super(Service, self).__init__('coba-daemon', pid_dir=coba.config.pid_dir)
+        self._coba = coba
+        self.logger.setLevel(coba.config.log_level)
+        self.watcher = Watcher(coba, self.logger)
+
+    def run(self):
+        self.logger.info('Starting daemon.')
+        self.watcher.start()
+        self.watcher.join()
+
+    def on_stop(self):
+        self.logger.info('Termination requested.')
+        self.watcher.stop()
+        self.watcher.join()
+        self.logger.info('Service termination complete.')
