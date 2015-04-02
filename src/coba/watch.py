@@ -118,18 +118,17 @@ class ActiveFiles(object):
             self._stop = True
             self.is_stopping.notify_all()
             while self._queue:
-                    self.is_not_empty.wait()
+                self.is_not_empty.wait()
 
 
 class EventHandler(watchdog.events.FileSystemEventHandler):
     """
     Event handler for file system events.
     """
-
     # Deletion events are ignored because we only store file content,
-    # not directory content.
-    # Creation events are ignored because they are followed by
-    # modification events.
+    # not directory content. Creation events are ignored because they
+    # are followed by modification events. Directory events are ignored
+    # because we only track files.
 
     def __init__(self, files):
         super(EventHandler, self).__init__()
@@ -137,7 +136,6 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
 
     def dispatch(self, event):
         if event.is_directory:
-            # Dictionary events are ignored because we only track files
             return
         super(EventHandler, self).dispatch(event)
 
@@ -148,7 +146,7 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
         # For moves we don't care about the source file, because from
         # the source file's point of view being moved is equivalent to
         # being deleted (and we don't care about deletions).
-        self._files.register_event(Event(event.src_path))
+        self._files.register_event(Event(event.dest_path))
 
 
 class StorageThread(threading.Thread):
