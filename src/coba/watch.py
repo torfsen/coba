@@ -12,14 +12,15 @@ import service
 import watchdog.observers
 import watchdog.events
 
+from .utils import normalize_path
+
 
 class Event(object):
     """
     A timed file modification event.
     """
-
     def __init__(self, path, t=None):
-        self.path = path
+        self.path = normalize_path(path)
         self.time = t or time.time()
 
     def __eq__(self, other):
@@ -42,7 +43,6 @@ class ActiveFiles(object):
     active files the iterator blocks). Use the ``join`` method to
     automatically exit the loop once all files have been processed.
     """
-
     def __init__(self, coba):
         self._coba = coba
         self._files = {}
@@ -58,14 +58,15 @@ class ActiveFiles(object):
         """
         with self.is_not_empty:
             try:
-                f = self._files[event.path]
+                f = self._files[str(event.path)]
+                print 'Registering event for known file "%s".' % f.path
             except KeyError:
                 f = self._coba.file(event.path)
-                self._files[event.path] = f
+                print 'Registering event for new file "%s".' % f.path
+                self._files[str(f.path)] = f
                 self.is_not_empty.notify_all()
             f._register_event(event)
-            self._queue[event.path] = event.time
-            print 'Registered event for "%s".' % event.path
+            self._queue[str(f.path)] = event.time
 
     def processed(self, path):
         """
@@ -178,7 +179,10 @@ class StorageThread(threading.Thread):
         """
         Backup a file and mark it as processed.
         """
-        f.backup()
+        try:
+            f.backup()
+        except Exception as e:
+            print "ERROR: %s" % e
         self._files.processed(str(f.path))
 
     def run(self):
@@ -248,6 +252,7 @@ class Watcher(object):
         print "Waiting for storage thread to finish."
         self._storage_thread.join()
         print "Watcher is stopped."
+
 
 class Service(service.Service):
     """
