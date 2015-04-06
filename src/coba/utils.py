@@ -9,7 +9,7 @@ import os.path
 import pathlib
 
 
-__all__ = ['binary_file_iterator', 'normalize_path']
+__all__ = ['binary_file_iterator', 'is_in_dir', 'normalize_path']
 
 
 def binary_file_iterator(f, block_size=2**20):
@@ -36,3 +36,16 @@ def normalize_path(path):
     """
     return pathlib.Path(os.path.normcase(os.path.realpath(str(path))))
 
+
+def is_in_dir(candidate, parent):
+    """
+    Check if a path is inside a directory.
+
+    ``candidate`` is a path to a file or directory and ``parent`` is
+    a directory path. If ``candidate`` is within ``parent`` the function
+    returns ``True``, otherwise it returns ``False``.
+
+    Note that the inclusion check is strict, i.e. if
+    ``candidate == parent`` then the function returns ``False``.
+    """
+    return pathlib.Path(parent) in pathlib.Path(candidate).parents
