@@ -15,21 +15,6 @@ import watchdog.events
 from .utils import normalize_path
 
 
-class Event(object):
-    """
-    A timed file modification event.
-    """
-    def __init__(self, path, t=None):
-        self.path = normalize_path(path)
-        self.time = t or time.time()
-
-    def __eq__(self, other):
-        return self.__dict__ == other.__dict__
-
-    def __ne__(self, other):
-        return self.__dict__ != other.__dict__
-
-
 class FileQueue(object):
     """
     Queue for active files.
@@ -43,6 +28,7 @@ class FileQueue(object):
     active files the iterator blocks). Use the ``join`` method to
     automatically exit the loop once all files have been processed.
     """
+
     def __init__(self, idle_wait_time=5):
         self.idle_wait_time = idle_wait_time
         self._queue = pqdict.PQDict()
@@ -50,14 +36,28 @@ class FileQueue(object):
         self.lock = threading.RLock()
         self.is_not_empty = threading.Condition(self.lock)
 
-    def register_event(self, event):
+    def register_modification(self, path):
         """
-        Add a file modification event to the queue.
+        Register a file's modification.
         """
+        path = str(normalize_path(path))
         with self.is_not_empty:
-            self._queue[str(event.path)] = event.time + self.idle_wait_time
-            print 'Registered event for "%s".' % event.path
+            self._queue[path] = time.time() + self.idle_wait_time
+            print 'File "%s" was modified.' % path
             self.is_not_empty.notify_all()
+
+    def register_deletion(self, path):
+        """
+        Register a file's deletion.
+        """
+        path = str(normalize_path(path))
+        with self.is_not_empty:
+            try:
+                del self._queue[path]
+                print 'Previously modified file "%s" was removed before backup.' % path
+                self.is_not_empty.notify_all()
+            except KeyError:
+                pass
 
     def next(self):
         """
@@ -113,10 +113,9 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
     """
     Event handler for file system events.
     """
-    # Deletion events are ignored because we only store file content,
-    # not directory content. Creation events are ignored because they
-    # are followed by modification events. Directory events are ignored
-    # because we only track files.
+    # Creation events are ignored because they are followed by
+    # modification events. Directory events are ignored because
+    # we only track files.
 
     def __init__(self, queue):
         super(EventHandler, self).__init__()
@@ -128,13 +127,18 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
         super(EventHandler, self).dispatch(event)
 
     def on_modified(self, event):
-        self._queue.register_event(Event(event.src_path))
+        self._queue.register_modification(event.src_path)
+
+    def on_deleted(self, event):
+        self._queue.register_deletion(event.src_path)
 
     def on_moved(self, event):
-        # For moves we don't care about the source file, because from
-        # the source file's point of view being moved is equivalent to
-        # being deleted (and we don't care about deletions).
-        self._queue.register_event(Event(event.dest_path))
+        self._queue.register_deletion(event.src_path)
+        # FIXME: We only should register the event if we track the
+        # destination directory. In that case, there are probably
+        # separate creation and modification events in that directory,
+        # in which case we could 
+        self._queue.register_modification(event.dest_path)
 
 
 class StorageThread(threading.Thread):
