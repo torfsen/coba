@@ -18,6 +18,7 @@ from .stores import PathStore, BlobStore
 from .utils import normalize_path
 from .watch import Watcher
 
+
 class _JSONEncoder(json.JSONEncoder):
     """
     JSON encoder for file information classes.
@@ -35,14 +36,6 @@ class File(object):
     This class represents a (potentially non-existing) file on the
     local disk. It can be used to create new backups of the file
     or to access the file's revisions.
-
-    To check if a file with this path currently exists on the local
-    disk use the ``exists`` property.
-
-    The ``watched`` property tells you whether this path is being
-    watched by coba. Note that a path can be watched without existing
-    (in that case the corresponding file would be stored upon
-    creation).
     """
 
     def __init__(self, coba, path):
@@ -54,21 +47,6 @@ class File(object):
         """
         self._coba = coba
         self.path = normalize_path(path)
-        self.lock = threading.Lock()
-        self._event = None
-        self._force_backup = False
-
-    def _register_event(self, event):
-        with self.lock:
-            if not self._event:
-                self._event = event
-                return
-            if event.time - self._event.time > self._coba.idle_wait_time:
-                print (('Time span between modifications of "%s" is longer ' +
-                       'than the idle wait time, marking file for forced ' +
-                       'backup.') % self.path)
-                self._force_backup = True
-            self._event = event
 
     def _object_hook(self, d):
         """
@@ -119,17 +97,6 @@ class File(object):
         except:
             self._coba._blob_store.remove(hashsum)
             raise
-
-    @property
-    def exists(self):
-        return self.path.is_file()
-
-    @property
-    def watched(self):
-        for watched_dir in self._coba.watched_dirs:
-            if watched_dir in self.path.parents:
-                return True
-        return False
 
     def __str__(self):
         return str(self.path)

@@ -30,9 +30,9 @@ class Event(object):
         return self.__dict__ != other.__dict__
 
 
-class ActiveFiles(object):
+class FileQueue(object):
     """
-    Manager for active files.
+    Queue for active files.
 
     This class provides the communication between incoming file system
     events (from ``EventHandler``) and the storage of the corresponding
@@ -43,43 +43,21 @@ class ActiveFiles(object):
     active files the iterator blocks). Use the ``join`` method to
     automatically exit the loop once all files have been processed.
     """
-    def __init__(self, coba):
-        self._coba = coba
-        self._files = {}
+    def __init__(self, idle_wait_time=5):
+        self.idle_wait_time = idle_wait_time
         self._queue = pqdict.PQDict()
         self._stop = False
         self.lock = threading.RLock()
         self.is_not_empty = threading.Condition(self.lock)
-        self.is_stopping = threading.Condition(self.lock)
 
     def register_event(self, event):
         """
         Add a file modification event to the queue.
         """
         with self.is_not_empty:
-            try:
-                f = self._files[str(event.path)]
-                print 'Registering event for known file "%s".' % f.path
-            except KeyError:
-                f = self._coba.file(event.path)
-                print 'Registering event for new file "%s".' % f.path
-                self._files[str(f.path)] = f
-                self.is_not_empty.notify_all()
-            f._register_event(event)
-            self._queue[str(f.path)] = event.time
-
-    def processed(self, path):
-        """
-        Mark a file as processed.
-        """
-        with self.lock:
-            f = self._files.pop(path)
-            if f._force_backup:
-                # Backup was forced, reschedule to capture second modification
-                print 'Rescheduling "%s" after forced backup.' % f.path
-                self.register_event(f._event, f._event.time)
-            else:
-                print '"%s" has been processed.' % path
+            self._queue[str(event.path)] = event.time + self.idle_wait_time
+            print 'Registered event for "%s".' % event.path
+            self.is_not_empty.notify_all()
 
     def next(self):
         """
@@ -90,13 +68,23 @@ class ActiveFiles(object):
         until the next call to ``register_event`` is made. See ``join``
         for breaking the block.
         """
-        with self.is_not_empty:
-            while not self._queue:
-                if self._stop:
-                    self._stop = False  # Allow restart
-                    raise StopIteration
-                self.is_not_empty.wait(1)
-            return self._files[self._queue.popitem()[0]]
+        while True:
+            with self.is_not_empty:
+                while not self._queue:
+                    if self._stop:
+                        self._stop = False  # Allow restart
+                        raise StopIteration
+                    self.is_not_empty.wait(1)
+                path, target_time = self._queue.popitem()
+                pause = target_time - time.time()
+                if pause <= 0:
+                    self.is_not_empty.notify_all()
+                    print 'Dispatching "%s" for processing.' % path
+                    return path
+            self._queue[path] = target_time  # Reschedule
+            print 'Waiting for %f seconds before processing "%s".' % (
+                  pause, path)
+            time.sleep(pause)
 
     def __iter__(self):
         return self
@@ -117,7 +105,6 @@ class ActiveFiles(object):
         """
         with self.is_not_empty:
             self._stop = True
-            self.is_stopping.notify_all()
             while self._queue:
                 self.is_not_empty.wait()
 
@@ -131,9 +118,9 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
     # are followed by modification events. Directory events are ignored
     # because we only track files.
 
-    def __init__(self, files):
+    def __init__(self, queue):
         super(EventHandler, self).__init__()
-        self._files = files
+        self._queue = queue
 
     def dispatch(self, event):
         if event.is_directory:
@@ -141,72 +128,41 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
         super(EventHandler, self).dispatch(event)
 
     def on_modified(self, event):
-        self._files.register_event(Event(event.src_path))
+        self._queue.register_event(Event(event.src_path))
 
     def on_moved(self, event):
         # For moves we don't care about the source file, because from
         # the source file's point of view being moved is equivalent to
         # being deleted (and we don't care about deletions).
-        self._files.register_event(Event(event.dest_path))
+        self._queue.register_event(Event(event.dest_path))
 
 
 class StorageThread(threading.Thread):
     """
     Daemon for storing file modifications.
 
-    File modifications are taken from the event list (see
-    ``ActiveFiles``) and stored. To avoid storing a file during an
-    ongoing modification there is a mechanism to wait until a file
-    is idle.
+    File modifications are taken from the file queue and stored.
     """
-
-    def __init__(self, files, idle_wait_time, *args, **kwargs):
+    def __init__(self, queue, backup, *args, **kwargs):
         """
         Constructor.
 
-        ``files`` is a queue of active files (see ``ActiveFiles``).
+        ``queue`` is a queue of active files (see ``FileQueue``).
 
-        ``idle_wait_time`` is the time in seconds that a file must be
-        unmodified after a previous modification before a backup is
-        done. This is to prevent backups during ongoing file
-        modifications.
+        ``backup`` is a callable that takes a file path and backs up
+        the file.
         """
         super(StorageThread, self).__init__(*args, **kwargs)
-        self._idle_wait_time = idle_wait_time
-        self._files = files
-
-    def _process(self, f):
-        """
-        Backup a file and mark it as processed.
-        """
-        try:
-            f.backup()
-        except Exception as e:
-            print "ERROR: %s" % e
-        self._files.processed(str(f.path))
+        self._queue = queue
+        self._backup = backup
 
     def run(self):
-        for f in self._files:
-            if f._force_backup:
-                self._process(f)
-            else:
-                event = f._event
-                pause = event.time + self._idle_wait_time - time.time()
-                print ('Waiting until "%s" is idle (pausing for %f seconds).' %
-                       (f.path, max(pause, 0)))
-                if pause > 0:
-                    time.sleep(pause)
-                if f._event == event or f._force_backup:
-                    # Either no further modification happened during
-                    # the pause or the event belongs to a new
-                    # modification.
-                    self._process(f)
-                else:
-                    # File was modified again while waiting for it to
-                    # be idle, we reschedule.
-                    print ('Rescheduling "%s" due to ongoing modification' %
-                          f.path)
-                    self._files.register_event(f._event)
+        for path in self._queue:
+            try:
+                self._backup(path)
+                print 'Backed up "%s".' % path
+            except Exception as e:
+                print 'Error while backing up "%s": %s' % (path, e)
 
 
 class Watcher(object):
@@ -218,14 +174,18 @@ class Watcher(object):
     """
 
     def __init__(self, coba):
-        self._files = ActiveFiles(coba)
-        self._event_handler = EventHandler(self._files)
+        self._queue = FileQueue(coba.idle_wait_time)
+        self._event_handler = EventHandler(self._queue)
         self._observers = []
         for dir in coba.watched_dirs:
             observer = watchdog.observers.Observer()
             observer.schedule(self._event_handler, str(dir), recursive=True)
             self._observers.append(observer)
-        self._storage_thread = StorageThread(self._files, coba.idle_wait_time)
+
+        def backup(path):
+            coba.file(path).backup()
+
+        self._storage_thread = StorageThread(self._queue, backup)
 
     def start(self):
         """
@@ -248,29 +208,8 @@ class Watcher(object):
         for observer in self._observers:
             observer.join()
         print "Waiting for file queue to finish."
-        self._files.join()
+        self._queue.join()
         print "Waiting for storage thread to finish."
         self._storage_thread.join()
         print "Watcher is stopped."
 
-
-class Service(service.Service):
-    """
-    The coba background daemon.
-    """
-    def __init__(self, coba):
-        super(Service, self).__init__('coba-daemon', pid_dir=coba.config.pid_dir)
-        self._coba = coba
-        self.logger.setLevel(coba.config.log_level)
-        self.watcher = Watcher(coba, self.logger)
-
-    def run(self):
-        self.logger.info('Starting daemon.')
-        self.watcher.start()
-        self.watcher.join()
-
-    def on_stop(self):
-        self.logger.info('Termination requested.')
-        self.watcher.stop()
-        self.watcher.join()
-        self.logger.info('Service termination complete.')
