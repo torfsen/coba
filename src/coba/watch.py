@@ -149,7 +149,7 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
             # See https://github.com/gorakhargosh/watchdog/issues/308
             if isinstance(event, watchdog.events.DirDeletedEvent):
                 self._queue.register_directory_deletion(event.src_path)
-            return
+            return  # Don't dispatch
         super(EventHandler, self).dispatch(event)
 
     def on_created(self, event):
@@ -204,7 +204,6 @@ class Watcher(object):
     File system events are observed and backups are made of modified
     files. Both of these processes run in separate threads.
     """
-
     def __init__(self, coba):
         self._queue = FileQueue(coba.idle_wait_time)
         self._event_handler = EventHandler(self._queue)
