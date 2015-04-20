@@ -19,7 +19,7 @@ def main(ctx):
     """
     storage_dir = os.path.expanduser('~/.coba/storage')
     driver = local_storage_driver(storage_dir)
-    ctx.obj = Coba(driver, watched_dirs=['/tmp'])
+    ctx.obj = Coba(driver, watched_dirs=['.'])
 
 
 @main.command()

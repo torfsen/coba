@@ -4,6 +4,7 @@
 File-system watching.
 """
 
+import os.path
 import threading
 import time
 
@@ -213,7 +214,8 @@ class Service(service.Service):
         self._observers = []
         for dir in coba.watched_dirs:
             observer = watchdog.observers.Observer()
-            observer.schedule(self._event_handler, str(dir), recursive=True)
+            dir = os.path.abspath(str(dir))
+            observer.schedule(self._event_handler, dir, recursive=True)
             self._observers.append(observer)
 
         def backup(path):
