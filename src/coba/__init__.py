@@ -16,7 +16,7 @@ import pathlib
 
 from .stores import PathStore, BlobStore
 from .utils import normalize_path
-from .watch import Watcher
+from .watch import Service
 
 
 class _JSONEncoder(json.JSONEncoder):
@@ -166,19 +166,25 @@ class Coba(object):
         self._info_store = PathStore(driver, 'coba-info')
         self.watched_dirs = [pathlib.Path(d) for d in (watched_dirs or ['.'])]
         self.idle_wait_time = 5
-        self.watcher = Watcher(self)
+        self.service = Service(self)
 
     def start(self):
         """
-        Start the continuous backups.
+        Start the backup daemon.
         """
-        self.watcher.start()
+        self.service.start()
 
     def stop(self):
         """
-        Stop the backups.
+        Stop the backup daemon.
         """
-        self.watcher.stop()
+        self.service.stop()
+
+    def kill(self):
+        """
+        Kill the backup daemon.
+        """
+        self.service.kill()
 
     def files(self):
         """
@@ -197,18 +203,6 @@ class Coba(object):
         given path.
         """
         return File(self, path)
-
-    def loop(self):
-        """
-        Start the backup and loop until CTRL+C.
-        """
-        self.start()
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            pass
-        self.stop()
 
 
 def local_storage_driver(path):

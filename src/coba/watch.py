@@ -29,7 +29,8 @@ class FileQueue(object):
     automatically exit the loop once all files have been processed.
     """
 
-    def __init__(self, idle_wait_time=5):
+    def __init__(self, logger, idle_wait_time=5):
+        self._logger = logger
         self.idle_wait_time = idle_wait_time
         self._queue = pqdict.PQDict()
         self._stop = False
@@ -43,7 +44,7 @@ class FileQueue(object):
         path = str(normalize_path(path))
         with self.is_not_empty:
             self._queue[path] = time.time() + self.idle_wait_time
-            print 'File "%s" was modified.' % path
+            self._logger.info('File "%s" was modified.' % path)
             self.is_not_empty.notify_all()
 
     def register_file_deletion(self, path):
@@ -54,7 +55,7 @@ class FileQueue(object):
         with self.is_not_empty:
             try:
                 del self._queue[path]
-                print 'Previously modified file "%s" was removed before backup.' % path
+                self._logger.info('Previously modified file "%s" was removed before backup.' % path)
                 self.is_not_empty.notify_all()
             except KeyError:
                 pass
@@ -68,7 +69,7 @@ class FileQueue(object):
             for key in self._queue.keys():
                 if is_in_dir(key, path):
                     del self._queue[key]
-                    print 'Previously modified file "%s" was removed before backup.' % key
+                    self._logger.info('Previously modified file "%s" was removed before backup.' % key)
             self.is_not_empty.notify_all()
 
     def next(self):
@@ -91,11 +92,11 @@ class FileQueue(object):
                 pause = target_time - time.time()
                 if pause <= 0:
                     self.is_not_empty.notify_all()
-                    print 'Dispatching "%s" for processing.' % path
+                    self._logger.debug('Dispatching "%s" for processing.' % path)
                     return path
             self._queue[path] = target_time  # Reschedule
-            print 'Waiting for %f seconds before processing "%s".' % (
-                  pause, path)
+            self._logger.debug('Waiting for %f seconds before processing "%s".' % (
+                  pause, path))
             time.sleep(pause)
 
     def __iter__(self):
@@ -175,7 +176,7 @@ class StorageThread(threading.Thread):
 
     File modifications are taken from the file queue and stored.
     """
-    def __init__(self, queue, backup, *args, **kwargs):
+    def __init__(self, queue, backup, logger, *args, **kwargs):
         """
         Constructor.
 
@@ -183,29 +184,31 @@ class StorageThread(threading.Thread):
 
         ``backup`` is a callable that takes a file path and backs up
         the file.
+
+        ``logger`` is a ``logging.Logger`` instance.
         """
         super(StorageThread, self).__init__(*args, **kwargs)
         self._queue = queue
         self._backup = backup
+        self._logger = logger
 
     def run(self):
         for path in self._queue:
             try:
+                self._logger.debug('Backing up "%s".' % path)
                 self._backup(path)
-                print 'Backed up "%s".' % path
+                self._logger.info('Backed up "%s".' % path)
             except Exception as e:
-                print 'Error while backing up "%s": %s' % (path, e)
+                self._logger.exception('Error while backing up "%s".' % path)
 
 
-class Watcher(object):
+class Service(service.Service):
     """
-    File system watcher.
-
-    File system events are observed and backups are made of modified
-    files. Both of these processes run in separate threads.
+    Coba daemon.
     """
     def __init__(self, coba):
-        self._queue = FileQueue(coba.idle_wait_time)
+        super(Service, self).__init__('coba', pid_dir='/tmp')
+        self._queue = FileQueue(self.logger, coba.idle_wait_time)
         self._event_handler = EventHandler(self._queue)
         self._observers = []
         for dir in coba.watched_dirs:
@@ -216,31 +219,34 @@ class Watcher(object):
         def backup(path):
             coba.file(path).backup()
 
-        self._storage_thread = StorageThread(self._queue, backup)
+        self._storage_thread = StorageThread(self._queue, backup, self.logger)
+        self._got_sigterm = threading.Event()
 
-    def start(self):
-        """
-        Start the watcher.
-        """
-        print "Starting observers."
+    def _start(self):
+        self.logger.info('Starting background process...')
+        self.logger.debug('Starting observers...')
         for observer in self._observers:
             observer.start()
-        print "Starting storage thread."
+        self.logger.debug('Starting background thread...')
         self._storage_thread.start()
+        self.logger.info('Background process is running.')
 
-    def stop(self):
-        """
-        Stop the watcher and block until shutdown is complete.
-        """
-        print "Stopping observers."
+    def _stop(self):
+        self.logger.info('Shutdown of background process initiated...')
+        self.logger.debug('Stopping observers...')
         for observer in self._observers:
             observer.stop()
-        print "Waiting for observers to finish."
+        self.logger.debug('Waiting for observers to finish...')
         for observer in self._observers:
             observer.join()
-        print "Waiting for file queue to finish."
+        self.logger.debug('Waiting for file queue to finish...')
         self._queue.join()
-        print "Waiting for storage thread to finish."
+        self.logger.debug('Waiting for storage thread to finish...')
         self._storage_thread.join()
-        print "Watcher is stopped."
+        self.logger.info('Background process has been shutdown.')
+
+    def run(self):
+        self._start()
+        self.wait_for_sigterm()
+        self._stop()
 
