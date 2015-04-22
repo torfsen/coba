@@ -186,6 +186,12 @@ class Coba(object):
         """
         self.service.kill()
 
+    def is_running(self):
+        """
+        Check if the backup daemon is running.
+        """
+        return self.service.is_running()
+
     def files(self):
         """
         List stored files.
