@@ -4,6 +4,7 @@
 Command-line interface.
 """
 
+import datetime
 import functools
 import os.path
 import sys
@@ -38,9 +39,11 @@ def main(ctx):
     ctx.obj = Coba(driver, watched_dirs=['.'])
 
 
-@main.command()
-@click.pass_context
-@_handle_errors
+def _command(f):
+    return main.command()(click.pass_context(_handle_errors(f)))
+
+
+@_command
 def start(ctx):
     """
     Start the backup daemon.
@@ -48,9 +51,7 @@ def start(ctx):
     ctx.obj.start()
 
 
-@main.command()
-@click.pass_context
-@_handle_errors
+@_command
 def stop(ctx):
     """
     Stop the backup daemon.
@@ -58,9 +59,7 @@ def stop(ctx):
     ctx.obj.stop()
 
 
-@main.command()
-@click.pass_context
-@_handle_errors
+@_command
 def status(ctx):
     """
     Check whether the backup daemon is running.
@@ -75,12 +74,26 @@ def status(ctx):
         sys.exit(1)
 
 
-@main.command()
-@click.pass_context
-@_handle_errors
+@_command
 def kill(ctx):
     """
     Kill the backup daemon.
     """
     ctx.obj.kill()
+
+
+@_command
+@click.argument('PATH')
+def info(ctx, path):
+    """
+    Print information about a file.
+    """
+    f = ctx.obj.file(path)
+    revs = f.get_revisions()
+    if revs:
+        print '%d revision(s) for "%s":\n' % (len(revs), f.path)
+        for rev in reversed(revs):
+             print datetime.datetime.fromtimestamp(rev.timestamp), rev.hashsum
+    else:
+        print 'No revisions for "%s".' % f.path
 
