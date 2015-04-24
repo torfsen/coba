@@ -157,9 +157,11 @@ def restore(ctx, path, target, hash):
     """
     Restore a file to a previous revision.
     """
+    f = ctx.obj.file(path)
     if target is None:
         target = path
-    f = ctx.obj.file(path)
+    if os.path.isdir(target):
+        target = os.path.join(target, f.path.name)
     candidates = []
     revs = f.get_revisions()
     if not revs:
