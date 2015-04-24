@@ -192,6 +192,14 @@ class Coba(object):
         """
         return self.service.is_running()
 
+    def get_pid(self):
+        """
+        Return the backup daemon's PID.
+
+        Returns the PID or ``None`` if the backup daemon is not running.
+        """
+        return self.service.get_pid()
+
     def files(self):
         """
         List stored files.

@@ -6,12 +6,36 @@ Command-line interface.
 
 import datetime
 import functools
+import logging
 import os.path
 import sys
+import traceback
 
 import click
 
 from . import Coba, local_storage_driver
+
+
+log = logging.getLogger(__name__)
+# Make sure no default warning is displayed if there's an error before
+# logging is fully initialized.
+log.addHandler(logging.NullHandler())
+
+
+class _MaxLevelFilter(logging.Filter):
+    """
+    Logging filter that discards messages with too high a level.
+    """
+    def __init__(self, level):
+        """
+        Constructor.
+
+        ``level`` is the maximum level (exclusive).
+        """
+        self.level = level
+
+    def filter(self, record):
+        return record.levelno < self.level
 
 
 def _handle_errors(f):
@@ -23,17 +47,43 @@ def _handle_errors(f):
         try:
             return f(*args, **kwargs)
         except Exception as e:
-            sys.exit(e)
+            log.debug(traceback.format_exc())
+            sys.exit('Error: %s' % e)
     return wrapper
+
+
+def _init_logging(level):
+    """
+    Initialize logging.
+
+    Logging is initialized so that warnings and errors are printed
+    to STDERR, anything else is printed to STDOUT.
+
+    Any message whose level is less than ``level`` is suppressed.
+    """
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.addFilter(_MaxLevelFilter(logging.WARNING))
+    log.addHandler(stdout_handler)
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setLevel(logging.WARNING)
+    log.addHandler(stderr_handler)
+    log.setLevel(level)
+
+
+# Log levels for --verbosity option
+_VERBOSITY_LOG_LEVELS = [logging.WARNING, logging.INFO, logging.DEBUG]
 
 
 @click.group()
 @click.pass_context
+@click.option('-v', '--verbose', count=True)
 @_handle_errors
-def main(ctx):
+def main(ctx, verbose):
     """
     Coba is a continuous backup system.
     """
+    level = _VERBOSITY_LOG_LEVELS[min(verbose, len(_VERBOSITY_LOG_LEVELS) - 1)]
+    _init_logging(level)
     storage_dir = os.path.expanduser('~/.coba/storage')
     driver = local_storage_driver(storage_dir)
     ctx.obj = Coba(driver, watched_dirs=['.'])
@@ -69,6 +119,7 @@ def status(ctx):
     """
     if ctx.obj.is_running():
         print "The backup daemon is running."
+        log.info('Daemon PID is %d.' % ctx.obj.get_pid())
     else:
         print "The backup daemon is not running."
         sys.exit(1)
@@ -122,7 +173,7 @@ def restore(ctx, path, target, hash):
     if len(candidates) > 1:
         raise ValueError('Hash "%s" for "%s" is ambiguous.' % (hash, f.path))
     rev = candidates[0]
-    print 'Restoring content of "%s" from revision "%s" to "%s".' % (
-            f.path, rev.hashsum, target)
+    log.info('Restoring content of "%s" from revision "%s" to "%s".' % (f.path,
+             rev.hashsum, target))
     rev.restore(target)
 
