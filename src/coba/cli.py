@@ -83,7 +83,7 @@ def kill(ctx):
 
 
 @_command
-@click.argument('PATH')
+@click.argument('PATH', type=click.Path())
 def info(ctx, path):
     """
     Print information about a file.
@@ -96,4 +96,33 @@ def info(ctx, path):
              print datetime.datetime.fromtimestamp(rev.timestamp), rev.hashsum
     else:
         print 'No revisions for "%s".' % f.path
+
+
+@_command
+@click.argument('PATH', type=click.Path())
+@click.argument('TARGET', type=click.Path(), required=False)
+@click.option('--hash', required=True)
+def restore(ctx, path, target, hash):
+    """
+    Restore a file to a previous revision.
+    """
+    if target is None:
+        target = path
+    f = ctx.obj.file(path)
+    candidates = []
+    revs = f.get_revisions()
+    if not revs:
+        raise ValueError('No revisions for "%s".' % f.path)
+    for rev in f.get_revisions():
+        if rev.hashsum.startswith(hash):
+            candidates.append(rev)
+    if not candidates:
+        raise ValueError('No revision for "%s" fits hash "%s".' % (f.path,
+                         hash))
+    if len(candidates) > 1:
+        raise ValueError('Hash "%s" for "%s" is ambiguous.' % (hash, f.path))
+    rev = candidates[0]
+    print 'Restoring content of "%s" from revision "%s" to "%s".' % (
+            f.path, rev.hashsum, target)
+    rev.restore(target)
 
