@@ -70,6 +70,11 @@ def _init_logging(level):
     log.setLevel(level)
 
 
+def _format_revision(rev):
+    return '%s %s' % (datetime.datetime.fromtimestamp(rev.timestamp),
+                      rev.hashsum)
+
+
 # Log levels for --verbosity option
 _VERBOSITY_LOG_LEVELS = [logging.WARNING, logging.INFO, logging.DEBUG]
 
@@ -144,7 +149,7 @@ def info(ctx, path):
     if revs:
         print '%d revision(s) for "%s":\n' % (len(revs), f.path)
         for rev in reversed(revs):
-             print datetime.datetime.fromtimestamp(rev.timestamp), rev.hashsum
+            print _format_revision(rev)
     else:
         print 'No revisions for "%s".' % f.path
 
@@ -162,19 +167,22 @@ def restore(ctx, path, target, hash):
         target = path
     if os.path.isdir(target):
         target = os.path.join(target, f.path.name)
-    candidates = []
+    candidates = {}
     revs = f.get_revisions()
     if not revs:
         raise ValueError('No revisions for "%s".' % f.path)
     for rev in f.get_revisions():
         if rev.hashsum.startswith(hash):
-            candidates.append(rev)
+            candidates[rev.hashsum] = rev
     if not candidates:
         raise ValueError('No revision for "%s" fits hash "%s".' % (f.path,
                          hash))
     if len(candidates) > 1:
+        log.info('Revisions fitting "%s":\n    ' % hash +
+                 '\n    '.join(_format_revision(r) for r in
+                 candidates.values()))
         raise ValueError('Hash "%s" for "%s" is ambiguous.' % (hash, f.path))
-    rev = candidates[0]
+    rev = candidates.values()[0]
     log.info('Restoring content of "%s" from revision "%s" to "%s".' % (f.path,
              rev.hashsum, target))
     rev.restore(target)
