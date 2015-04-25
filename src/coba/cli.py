@@ -13,7 +13,8 @@ import traceback
 
 import click
 
-from . import Coba, local_storage_driver
+from . import Coba
+from .stores import local_storage_driver
 
 
 log = logging.getLogger(__name__)
