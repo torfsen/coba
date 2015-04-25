@@ -81,11 +81,41 @@ _VERBOSITY_LOG_LEVELS = [logging.WARNING, logging.INFO, logging.DEBUG]
 
 @click.group()
 @click.pass_context
-@click.option('-v', '--verbose', count=True)
+@click.option('-v', '--verbose', count=True, help='Increase verbosity of ' +
+              'the output. This can be specified twice for even more output.')
 @_handle_errors
 def main(ctx, verbose):
     """
     Coba is a continuous backup system.
+
+    Whenever you change a file that you have told Coba to watch, Coba
+    will store a snapshot of the file's content which can be restored
+    later on. For this to work, Coba's backup daemon must be running in
+    the background. To start the daemon, use the `start` command:
+
+        coba start
+
+    The daemon can be stopped again using the `stop` command:
+
+        coba stop
+
+    To see which revisions Coba has stored for a given file, use the
+    `info` command:
+
+        coba info /path/to/the/file
+
+    To restore a file to a certain revision, use the `restore` command:
+
+        coba restore --hash REVISION_HASH /path/to/the/file
+
+    Most commands print little or no output by default. You can use the
+    `-v` option to show more information:
+
+        coba -v status
+
+    For more information on any command, use the `--help` option:
+
+        coba restore --help
     """
     level = _VERBOSITY_LOG_LEVELS[min(verbose, len(_VERBOSITY_LOG_LEVELS) - 1)]
     _init_logging(level)
@@ -102,6 +132,10 @@ def _command(f):
 def start(ctx):
     """
     Start the backup daemon.
+
+    This starts Coba's backup daemon in a separate background process.
+    The daemon will perform its duties until it is told to shut down
+    via the `stop` command.
     """
     ctx.obj.start()
 
@@ -110,6 +144,16 @@ def start(ctx):
 def stop(ctx):
     """
     Stop the backup daemon.
+
+    This signals the backup daemon to stop. Because the daemon will
+    complete its on-going backup activities before shutting down it
+    may still be alive for a moment after the `stop` command has been
+    issued. However, no new backup activities are scheduled once the
+    daemon receives the stop signal.
+
+    In case a bug prevents the daemon from stopping after the `stop`
+    command has been issued you can use the `kill` command to forcibly
+    kill the daemon's process.
     """
     ctx.obj.stop()
 
@@ -134,6 +178,11 @@ def status(ctx):
 def kill(ctx):
     """
     Kill the backup daemon.
+
+    This forcibly kills the backup daemon's process without giving it a
+    chance for a clean shutdown. Therefore, the `kill` command should
+    only be used as a last resort: the standard way of stopping the
+    daemon is via the `stop` command.
     """
     ctx.obj.kill()
 
@@ -143,11 +192,12 @@ def kill(ctx):
 def info(ctx, path):
     """
     Print information about a file.
+
+    This prints a list of the file's revisions.
     """
     f = ctx.obj.file(path)
     revs = f.get_revisions()
     if revs:
-        print '%d revision(s) for "%s":\n' % (len(revs), f.path)
         for rev in reversed(revs):
             print _format_revision(rev)
     else:
@@ -157,10 +207,25 @@ def info(ctx, path):
 @_command
 @click.argument('PATH', type=click.Path())
 @click.argument('TARGET', type=click.Path(), required=False)
-@click.option('--hash', required=True)
+@click.option('--hash', required=True, help='Revision hash')
 def restore(ctx, path, target, hash):
     """
     Restore a file to a previous revision.
+
+    The file PATH is restored to the revision specified via `--hash`.
+    If TARGET is not given, the file is restored at its original
+    location. If TARGET is given it can be either a filename (in which
+    case the file is restored at that location) or a directory (in which
+    case the file is restored in that directory using its original
+    basename).
+
+    The revision hash given using `--hash` can be partial (i.e. only a
+    part of the full hash, starting from its first character) but must
+    unambiguously identify a single revision. More precisely, it must
+    identify a single full revision hash (which may be shared by
+    multiple revisions containing the same content).
+
+    Use the `info` command to list available revisions for a file.
     """
     f = ctx.obj.file(path)
     if target is None:
