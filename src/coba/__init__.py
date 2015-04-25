@@ -6,16 +6,13 @@ Continuous backups.
 
 import collections
 import datetime
-import errno
 import json
-import os
 import threading
 import time
 
-import libcloud.storage.drivers.local
 import pathlib
 
-from .stores import PathStore, BlobStore
+from .stores import BlobStore, local_storage_driver, PathStore
 from .utils import normalize_path
 from .watch import Service
 
@@ -248,20 +245,3 @@ class Coba(object):
         """
         return File(self, path)
 
-
-def local_storage_driver(path):
-    """
-    Create a local LibCloud storage driver.
-
-    ``path`` is the directory in which the data is stored. It is
-    automatically created if it does not exist.
-
-    Returns an instance of
-    ``libcloud.storage.drivers.local.LocalStorageDriver``.
-    """
-    try:
-        os.mkdir(path)
-    except OSError as e:
-        if e.errno != errno.EEXIST:
-            raise
-    return libcloud.storage.drivers.local.LocalStorageDriver(path)

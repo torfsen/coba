@@ -6,12 +6,15 @@ Data stores based on LibCloud storage.
 
 import collections
 import cStringIO
+import errno
 import json
 import gzip
 import hashlib
+import os
 import tempfile
 
 import libcloud.storage.types
+import libcloud.storage.drivers.local
 
 from .utils import binary_file_iterator, normalize_path
 
@@ -63,6 +66,24 @@ def _upload_from_file(container, objname, fobj):
     fobj.seek(0)
     iterator = binary_file_iterator(fobj)
     container.upload_object_via_stream(iterator, objname)
+
+
+def local_storage_driver(path):
+    """
+    Create a local LibCloud storage driver.
+
+    ``path`` is the directory in which the data is stored. It is
+    automatically created if it does not exist.
+
+    Returns an instance of
+    ``libcloud.storage.drivers.local.LocalStorageDriver``.
+    """
+    try:
+        os.mkdir(path)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
+    return libcloud.storage.drivers.local.LocalStorageDriver(path)
 
 
 class Transformer(object):
