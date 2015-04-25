@@ -180,32 +180,72 @@ class Coba(object):
     offers a high-level interface for perfoming continuous backups.
     """
 
-    def __init__(self, driver, watched_dirs=None):
+    def __init__(self, driver, watched_dirs=None, idle_wait_time=5,
+                 pid_dir='/tmp'):
         """
         Constructor.
 
-        ``driver`` is a LibCloud storage driver and ``watched_dirs`` is
-        a list of directories to be put under continuous backup. The
-        directories must be disjoint, i.e. no directory should contain
-        an other one.
+        ``driver`` is a LibCloud storage driver used for storing backup
+        data.
+
+        ``watched_dirs`` is a list of directories to be put under
+        continuous backup. The directories must be disjoint, i.e. no
+        directory should contain an other one.
+
+        ``idle_wait_time`` is the time in seconds that a file which has
+        been modified must be idle before it is backed up.
+
+        ``pid_dir`` is the directory where the daemon's process PID file
+        is stored.
         """
         self._blob_store = BlobStore(driver, 'coba-blobs')
         self._info_store = PathStore(driver, 'coba-info')
         self.watched_dirs = [pathlib.Path(d) for d in (watched_dirs or ['.'])]
-        self.idle_wait_time = 5
+        self.idle_wait_time = idle_wait_time
+        self.pid_dir = pid_dir
         self.service = Service(self)
 
-    def start(self):
+    def start(self, block=False):
         """
         Start the backup daemon.
+
+        If ``block`` is true then the call blocks until the daemon
+        process has started. ``block`` can either be ``True`` (in which
+        case it blocks indefinitely) or a timeout in seconds.
+
+        The return value is ``True`` if the daemon process has been
+        started and ``False`` otherwise.
         """
         self.service.start()
+        if block:
+            if block == True:
+                block = float('Inf')
+            timeout = time.time() + block
+            while not self.service.is_running() and time.time() < timeout:
+                time.sleep(0.1)
+        return self.service.is_running()
 
-    def stop(self):
+    def stop(self, block=False):
         """
         Stop the backup daemon.
+
+        If ``block`` is true then the call blocks until the daemon
+        process has exited. This may take some time since the daemon
+        process will complete its on-going backup activities before
+        shutting down. ``block`` can either be ``True`` (in which case
+        it blocks indefinitely) or a timeout in seconds.
+
+        The return value is ``True`` if the daemon process has been
+        stopped and ``False`` otherwise.
         """
         self.service.stop()
+        if block:
+            if block == True:
+                block = float('Inf')
+            timeout = time.time() + block
+            while self.service.is_running() and time.time() < timeout:
+                time.sleep(0.1)
+        return not self.service.is_running()
 
     def kill(self):
         """

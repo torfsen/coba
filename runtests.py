@@ -24,13 +24,13 @@
 Test runner for coba tests.
 """
 
-import os.path
 import sys
 
 import nose
 
-_ROOT_DIR = os.path.dirname(__file__)
-_SRC_DIR = os.path.join(_ROOT_DIR, 'src')
-sys.path.insert(0, _SRC_DIR)
+argv = sys.argv[:]
+argv.insert(1, '--nocapture')  # The daemon package doesn't like nose
+                               # capturing STDOUT.
 
-nose.main()
+
+nose.main(argv=argv)

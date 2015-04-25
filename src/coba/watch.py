@@ -208,7 +208,7 @@ class Service(service.Service):
     Coba daemon.
     """
     def __init__(self, coba):
-        super(Service, self).__init__('coba', pid_dir='/tmp')
+        super(Service, self).__init__('coba', pid_dir=coba.pid_dir)
         self._queue = FileQueue(self.logger, coba.idle_wait_time)
         self._event_handler = EventHandler(self._queue)
         self._observers = []
