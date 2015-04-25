@@ -100,9 +100,9 @@ def main(ctx, verbose):
         coba stop
 
     To see which revisions Coba has stored for a given file, use the
-    `info` command:
+    `revs` command:
 
-        coba info /path/to/the/file
+        coba revs /path/to/the/file
 
     To restore a file to a certain revision, use the `restore` command:
 
@@ -189,19 +189,21 @@ def kill(ctx):
 
 @_command
 @click.argument('PATH', type=click.Path())
-def info(ctx, path):
+@click.option('--hash', help='Revision hash')
+def revs(ctx, path, hash):
     """
-    Print information about a file.
+    List a file's revisions.
 
-    This prints a list of the file's revisions.
+    Use the `--hash` option to only display revisions whose hash starts
+    with a given value.
     """
     f = ctx.obj.file(path)
-    revs = f.get_revisions()
+    revs = f.filter_revisions(hash=hash, unique=False)
     if revs:
         for rev in reversed(revs):
             print _format_revision(rev)
     else:
-        print 'No revisions for "%s".' % f.path
+        log.info('No revisions for "%s".' % f.path)
 
 
 @_command
@@ -225,30 +227,22 @@ def restore(ctx, path, target, hash):
     identify a single full revision hash (which may be shared by
     multiple revisions containing the same content).
 
-    Use the `info` command to list available revisions for a file.
+    Use the `revs` command to list available revisions for a file.
     """
     f = ctx.obj.file(path)
-    if target is None:
-        target = path
-    if os.path.isdir(target):
-        target = os.path.join(target, f.path.name)
-    candidates = {}
-    revs = f.get_revisions()
+    revs = f.filter_revisions(hash=hash, unique=True)
     if not revs:
-        raise ValueError('No revisions for "%s".' % f.path)
-    for rev in f.get_revisions():
-        if rev.hashsum.startswith(hash):
-            candidates[rev.hashsum] = rev
-    if not candidates:
         raise ValueError('No revision for "%s" fits hash "%s".' % (f.path,
                          hash))
-    if len(candidates) > 1:
-        log.info('Revisions fitting "%s":\n    ' % hash +
-                 '\n    '.join(_format_revision(r) for r in
-                 candidates.values()))
+    if len(revs) > 1:
+        log.info('Revisions for "%s" fitting "%s":\n    ' % (f.path, hash) +
+                 '\n    '.join(_format_revision(r) for r in revs))
         raise ValueError('Hash "%s" for "%s" is ambiguous.' % (hash, f.path))
-    rev = candidates.values()[0]
-    log.info('Restoring content of "%s" from revision "%s" to "%s".' % (f.path,
-             rev.hashsum, target))
-    rev.restore(target)
+    target = revs[0].restore(target)
+    if target == f.path:
+        log.info('Restored content of "%s" from revision "%s".' % (f.path,
+                 revs[0].hashsum ))
+    else:
+        log.info('Restored content of "%s" from revision "%s" to "%s".' % (
+                 f.path, revs[0].hashsum, target))
 

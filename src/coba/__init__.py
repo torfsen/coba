@@ -4,6 +4,7 @@
 Continuous backups.
 """
 
+import collections
 import datetime
 import errno
 import json
@@ -85,7 +86,6 @@ class File(object):
         The current content of the file is stored in the
         storage. The corresponding revision is returned.
         """
-        print 'Performing backup of "%s".' % self.path
         with self.path.open('rb') as f:
             hashsum = self._coba._blob_store.put(f)
         try:
@@ -97,6 +97,30 @@ class File(object):
         except:
             self._coba._blob_store.remove(hashsum)
             raise
+
+    def filter_revisions(self, hash=None, unique=False):
+        """
+        Filter revisions.
+
+        By default, all revisions are returned.
+
+        If ``hash`` is not ``None`` then only revisions whose hash
+        starts with the given value are returned.
+
+        If ``unique`` is true then for multiple revisions which have the
+        same hash only the most recent one is included in the result.
+        """
+        revs = self.get_revisions()
+        if not revs:
+            return []
+        if hash:
+            revs = [rev for rev in revs if rev.hashsum.startswith(hash)]
+        if unique:
+            most_recent = collections.OrderedDict()
+            for rev in revs:
+                most_recent[rev.hashsum] = rev
+            revs = most_recent.values()
+        return revs
 
     def __str__(self):
         return str(self.path)
@@ -121,23 +145,29 @@ class Revision(object):
         self.timestamp = timestamp
         self.hashsum = hashsum
 
-    def restore(self, path=None, block_size=2**20):
+    def restore(self, target=None, block_size=2**20):
         """
         Restore the revision.
 
         The content of the revision is written to disk. By default
-        the original filename is used, provide ``path`` to restore
-        the revision to a different location. ``path`` can either be
-        a string or a ``pathlib.Path`` instance.
+        the original filename is used, provide ``target`` to restore
+        the revision to a different location. ``target`` can either be
+        a string or a ``pathlib.Path`` instance. If ``target`` is an
+        (existing) directory then the file's basename is appended to it.
+
+        Returns the final target path to which the revision was restored.
         """
-        path = pathlib.Path(path or self.file.path)
+        target = pathlib.Path(target or self.file.path)
+        if target.is_dir():
+            target = target.joinpath(self.file.path.name)
         with self.file._coba._blob_store.get_file(self.hashsum) as in_file:
-            with path.open('wb') as out_file:
+            with target.open('wb') as out_file:
                 while True:
                     block = in_file.read(block_size)
                     if not block:
                         break
                     out_file.write(block)
+        return target
 
     def __repr__(self):
         p = str(self.file.path)
