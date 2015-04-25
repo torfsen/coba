@@ -1,6 +1,7 @@
 #!/usr/bin/env python
+# vim: set fileencoding=utf-8 :
 
-# Copyright (c) 2014 Florian Brucker
+# Copyright (c) 2015 Florian Brucker
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,6 +32,5 @@ import nose
 argv = sys.argv[:]
 argv.insert(1, '--nocapture')  # The daemon package doesn't like nose
                                # capturing STDOUT.
-
 
 nose.main(argv=argv)
