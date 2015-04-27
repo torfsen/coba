@@ -37,6 +37,7 @@ import time
 from nose.tools import eq_ as eq, ok_ as ok
 
 from coba import Coba
+from coba.config import Configuration
 from coba.stores import local_storage_driver
 
 
@@ -53,7 +54,7 @@ class Test_Coba(object):
 
     def setup(self):
         self.temp_dir = tempfile.mkdtemp()
-        self.storage_dir = self.path('storage')
+        self.config = Configuration(storage_dir=self.path('storage'))
         self.coba = None
 
     def teardown(self):
@@ -65,14 +66,12 @@ class Test_Coba(object):
         return os.path.join(self.temp_dir, p)
 
     def watch(self, *args, **kwargs):
-        idle_wait_time = kwargs.pop('idle_wait_time', 0)
-        dirs = [self.path(d) for d in args]
-        for d in dirs:
+        self.config.idle_wait_time = kwargs.pop('idle_wait_time', 0)
+        self.config.watched_dirs = [self.path(d) for d in args]
+        for d in self.config.watched_dirs:
             self.mkdir(d)
-        driver = local_storage_driver(self.storage_dir)
-        self.coba = Coba(driver, watched_dirs=dirs,
-                         idle_wait_time=idle_wait_time,
-                         pid_dir=self.temp_dir)
+        self.config.pid_dir = self.temp_dir
+        self.coba = Coba(self.config)
         self.coba.start(block=5)
 
     def mkdir(self, path):
@@ -104,7 +103,7 @@ class Test_Coba(object):
     def file(self, path):
         return self.coba.file(self.path(path))
 
-    def wait(self, seconds=1):
+    def wait(self, seconds=1.5):
         time.sleep(seconds)
 
     def test_file_creation(self):

@@ -228,20 +228,17 @@ class Service(service.Service):
     """
     Coba daemon.
     """
-    def __init__(self, coba):
-        super(Service, self).__init__('coba', pid_dir=coba.pid_dir)
-        self._queue = FileQueue(self.logger, coba.idle_wait_time)
+    def __init__(self, backup, config):
+        super(Service, self).__init__('coba', pid_dir=config.pid_dir)
+        self.logger.setLevel(config.log_level)
+        self._queue = FileQueue(self.logger, config.idle_wait_time)
         self._event_handler = EventHandler(self._queue)
         self._observers = []
-        for dir in coba.watched_dirs:
+        for dir in config.watched_dirs:
             observer = watchdog.observers.Observer()
             dir = os.path.abspath(str(dir))
             observer.schedule(self._event_handler, dir, recursive=True)
             self._observers.append(observer)
-
-        def backup(path):
-            coba.file(path).backup()
-
         self._storage_thread = StorageThread(self._queue, backup, self.logger)
         self._got_sigterm = threading.Event()
 

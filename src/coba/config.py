@@ -30,6 +30,8 @@ import errno
 import json
 import os.path
 
+import pathlib
+
 
 class Configuration(object):
     """
@@ -59,7 +61,9 @@ class Configuration(object):
         Verbosity of the log output. The higher this value is, the less
         verbose the log output will be. A value of 10 shows debugging
         output, 20 shows general information, 30 shows warnings, and 40
-        shows only errors.
+        shows only errors. This only controls the output of the backup
+        daemon to syslog. The verbosity of the ``coba`` command line
+        utility can be controlled via its ``-v`` argument.
     """
 
     def __init__(self, **kwargs):

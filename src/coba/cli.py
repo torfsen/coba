@@ -141,9 +141,7 @@ def main(ctx, verbose):
     """
     level = _VERBOSITY_LOG_LEVELS[min(verbose, len(_VERBOSITY_LOG_LEVELS) - 1)]
     _init_logging(level)
-    storage_dir = os.path.expanduser('~/.coba/storage')
-    driver = local_storage_driver(storage_dir)
-    ctx.obj = Coba(driver, watched_dirs=['.'])
+    ctx.obj = Coba()
 
 
 def _command(f):

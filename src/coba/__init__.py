@@ -33,6 +33,7 @@ import time
 
 import pathlib
 
+from .config import Configuration
 from .stores import BlobStore, local_storage_driver, PathStore
 from .utils import normalize_path
 from .watch import Service
@@ -203,30 +204,24 @@ class Coba(object):
     offers a high-level interface for perfoming continuous backups.
     """
 
-    def __init__(self, driver, watched_dirs=None, idle_wait_time=5,
-                 pid_dir='/tmp'):
+    def __init__(self, config=None):
         """
         Constructor.
 
-        ``driver`` is a LibCloud storage driver used for storing backup
-        data.
-
-        ``watched_dirs`` is a list of directories to be put under
-        continuous backup. The directories must be disjoint, i.e. no
-        directory should contain an other one.
-
-        ``idle_wait_time`` is the time in seconds that a file which has
-        been modified must be idle before it is backed up.
-
-        ``pid_dir`` is the directory where the daemon's process PID file
-        is stored.
+        ``config`` is a ``coba.config.Configuration`` instance. If it
+        is not given the configuration is loaded from its default
+        location (``~/.coba/.config``) if that file exists. Otherwise
+        the default configuration is used.
         """
+        self.config = config or Configuration.load()
+        driver = local_storage_driver(self.config.storage_dir)
         self._blob_store = BlobStore(driver, 'coba-blobs')
         self._info_store = PathStore(driver, 'coba-info')
-        self.watched_dirs = [pathlib.Path(d) for d in (watched_dirs or ['.'])]
-        self.idle_wait_time = idle_wait_time
-        self.pid_dir = pid_dir
-        self.service = Service(self)
+
+        def backup(path):
+            self.file(path).backup()
+
+        self.service = Service(backup, self.config)
 
     def start(self, block=False):
         """
