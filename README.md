@@ -1,4 +1,4 @@
-Coba - A continuous backup system
+Coba - a continuous backup system
 =================================
 Coba backs up your files whenever you change them, so you don't have to
 remember to do backups anymore and never again loose data because your
@@ -23,7 +23,7 @@ Then create a virtual env and activate it:
 
 Install all packages that are necessary for development:
 
-    $ pip -r requirements.txt
+    $ pip install -r requirements.txt
 
 Also install Coba itself as an editable package, which creates the `coba`
 command line executable thanks to Click's
@@ -39,7 +39,8 @@ Now that your environment is set up you should run the tests:
 
     $ ./runtests.py
 
-Make sure to create an issue if any of the tests fail.
+Make sure to [create an issue](https://github.com/torfuspolymorphus/coba/issues)
+if any of the tests fail.
 
 
 License
