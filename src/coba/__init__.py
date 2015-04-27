@@ -37,6 +37,8 @@ from .stores import BlobStore, local_storage_driver, PathStore
 from .utils import normalize_path
 from .watch import Service
 
+__version__ = '0.1.0'
+
 
 class _JSONEncoder(json.JSONEncoder):
     """

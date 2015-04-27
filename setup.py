@@ -80,4 +80,10 @@ setup(
     packages=find_packages('src'),
     package_dir={'': 'src'},
     install_requires='click pathlib pqdict service watchdog'.split(),
+
+    # Click CLI integration
+    entry_points="""
+        [console_scripts]
+        coba=coba.cli:main
+    """,
 )
