@@ -91,6 +91,12 @@ class File(object):
             return []
         return json.loads(s, object_hook=self._object_hook)
 
+    def is_ignored(self):
+        """
+        Check if the file is ignored.
+        """
+        return self._coba.config.is_ignored(self.path)
+
     def _set_revisions(self, revisions):
         """
         Set the file's revisions.
@@ -203,7 +209,6 @@ class Coba(object):
     This class assembles the different parts of the coba systems and
     offers a high-level interface for perfoming continuous backups.
     """
-
     def __init__(self, config=None):
         """
         Constructor.
