@@ -144,7 +144,7 @@ class Test_Coba(object):
         eq(len(revs), 1)
         eq(revs[0].hashsum, hash)
 
-    def test_file_move_between_watchs(self):
+    def test_file_move_between_watches(self):
         hash = self.write('foo/bar', 'bazinga')
         self.watch('foo', 'foz')
         self.move('foo/bar', 'foz/bar')
@@ -160,6 +160,36 @@ class Test_Coba(object):
         self.move('foo/bar', 'foz/bar')
         self.wait()
         f = self.file('foz/bar')
+        revs = f.get_revisions()
+        eq(len(revs), 1)
+        eq(revs[0].hashsum, hash)
+
+    def test_directory_move_within_watch(self):
+        hash = self.write('foo/bar/qux', 'bazinga')
+        self.watch('foo')
+        self.move('foo/bar', 'foo/baz')
+        self.wait()
+        f = self.file('foo/baz/qux')
+        revs = f.get_revisions()
+        eq(len(revs), 1)
+        eq(revs[0].hashsum, hash)
+
+    def test_directory_move_between_watches(self):
+        hash = self.write('foo/bar/qux', 'bazinga')
+        self.watch('foo', 'foz')
+        self.move('foo/bar', 'foz/bar')
+        self.wait()
+        f = self.file('foz/bar/qux')
+        revs = f.get_revisions()
+        eq(len(revs), 1)
+        eq(revs[0].hashsum, hash)
+
+    def test_directory_move_into_watch(self):
+        hash = self.write('foo/bar/qux', 'bazinga')
+        self.watch('foz')
+        self.move('foo/bar', 'foz/bar')
+        self.wait()
+        f = self.file('foz/bar/qux')
         revs = f.get_revisions()
         eq(len(revs), 1)
         eq(revs[0].hashsum, hash)
