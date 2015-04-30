@@ -32,30 +32,23 @@ import os.path
 
 import pathlib
 
+from .utils import is_in_dir, match_path
+
 
 class Configuration(object):
     """
     Coba configuration.
-
-    :watched_dirs:
-        A list of directories to be watched. Files within these
-        directories or their subdirectories are backed up after they
-        have been modified. The directories should be disjoint, i.e.
-        no directory in the list should be contained in another
-        directory in the list.
-
-    :storage_dir:
-       Directory where the backed up data is stored. This directory is
-       created if it does not exist.
 
     :idle_wait_time:
        Time (in seconds) that a file has to be idle after a
        modification before it is backed up. This is a feature to avoid
        backing up files during ongoing modifications.
 
-    :pid_dir:
-        Directory where the PID lock file of the service process is
-        stored.
+    :ignored:
+        Files that should be ignored. This is a list of patterns, a file
+        that matches at least one of these patterns is ignored by Coba.
+        The syntax for the patterns is that of Python's ``fnmatch``
+        module. Matching is done case-sensitively.
 
     :log_level:
         Verbosity of the log output. The higher this value is, the less
@@ -64,15 +57,31 @@ class Configuration(object):
         shows only errors. This only controls the output of the backup
         daemon to syslog. The verbosity of the ``coba`` command line
         utility can be controlled via its ``-v`` argument.
+
+    :pid_dir:
+        Directory where the PID lock file of the service process is
+        stored.
+
+    :storage_dir:
+       Directory where the backed up data is stored. This directory is
+       created if it does not exist.
+
+    :watched_dirs:
+        A list of directories to be watched. Files within these
+        directories or their subdirectories are backed up after they
+        have been modified. The directories should be disjoint, i.e.
+        no directory in the list should be contained in another
+        directory in the list.
     """
 
     def __init__(self, **kwargs):
         home = os.path.expanduser('~')
-        self.watched_dirs = [home]
-        self.storage_dir = os.path.join(home, '.coba', 'storage')
         self.idle_wait_time = 5
-        self.pid_dir = '/tmp'
+        self.ignored = ['**/.*']
         self.log_level = 1
+        self.pid_dir = '/tmp'
+        self.storage_dir = os.path.join(home, '.coba', 'storage')
+        self.watched_dirs = [home]
         for key, value in kwargs.iteritems():
             if (not key.startswith('_')) and hasattr(self, key):
                 setattr(self, key, value)
@@ -116,4 +125,14 @@ class Configuration(object):
                  key.startswith('_')}
         with codecs.open(path, 'w', encoding='utf8') as f:
             json.dump(attrs, f)
+
+    def is_ignored(self, path):
+        """
+        Check if a file is ignored.
+        """
+        if is_in_dir(path, self.storage_dir):
+            return True
+        for pattern in self.ignored:
+            if match_path(pattern, path):
+                return True
 

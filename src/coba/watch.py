@@ -25,7 +25,9 @@
 File-system watching.
 """
 
+import functools
 import os.path
+import sys
 import threading
 import time
 
@@ -77,7 +79,8 @@ class FileQueue(object):
         with self.is_not_empty:
             try:
                 del self._queue[path]
-                self._logger.info('Previously modified file "%s" was removed before backup.' % path)
+                self._logger.info(('Previously modified file "%s" was ' +
+                                  'removed before backup.') % path)
                 self.is_not_empty.notify_all()
             except KeyError:
                 pass
@@ -91,7 +94,8 @@ class FileQueue(object):
             for key in self._queue.keys():
                 if is_in_dir(key, path):
                     del self._queue[key]
-                    self._logger.info('Previously modified file "%s" was removed before backup.' % key)
+                    self._logger.info(('Previously modified file "%s" was ' +
+                                      'removed before backup.') % key)
             self.is_not_empty.notify_all()
 
     def next(self):
@@ -114,11 +118,12 @@ class FileQueue(object):
                 pause = target_time - time.time()
                 if pause <= 0:
                     self.is_not_empty.notify_all()
-                    self._logger.debug('Dispatching "%s" for processing.' % path)
+                    self._logger.debug('Dispatching "%s" for processing.' %
+                                       path)
                     return path
             self._queue[path] = target_time  # Reschedule
-            self._logger.debug('Waiting for %f seconds before processing "%s".' % (
-                  pause, path))
+            self._logger.debug(('Waiting for %f seconds before processing ' +
+                               '"%s".') % (pause, path))
             time.sleep(pause)
 
     def __iter__(self):
@@ -149,9 +154,21 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
     Event handler for file system events.
     """
     # Directory events are ignored because we only track files.
-    def __init__(self, queue):
+    def __init__(self, queue, is_ignored, logger):
+        """
+        Constructor.
+
+        ``queue`` is an instance of ``FileQueue``.
+
+        ``is_ignored`` is a function that, given a file path, returns
+        ``True`` if the file is to be ignored and ``False`` otherwise.
+
+        ``logger`` is a ``logging.Logger`` instance.
+        """
         super(EventHandler, self).__init__()
         self._queue = queue
+        self._is_ignored = is_ignored
+        self._logger = logger
 
     def dispatch(self, event):
         if event.is_directory:
@@ -176,20 +193,25 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
         super(EventHandler, self).dispatch(event)
 
     def on_created(self, event):
-        self._queue.register_file_modification(event.src_path)
+        self._register_file_modification(event.src_path)
 
-    def on_modified(self, event):
-        self._queue.register_file_modification(event.src_path)
+    on_modified = on_created
 
     def on_deleted(self, event):
         self._queue.register_file_deletion(event.src_path)
+
+    def _register_file_modification(self, path):
+        if self._is_ignored(path):
+            self._logger.debug('Ignoring modification of "%s".' % path)
+        else:
+            self._queue.register_file_modification(path)
 
     def on_moved(self, event):
         self._queue.register_file_deletion(event.src_path)
         # Watchdog only generates move events for moves within the same
         # watch. In that case, it generates no separate creation or
         # modification events for the destinations.
-        self._queue.register_file_modification(event.dest_path)
+        self._register_file_modification(event.dest_path)
 
 
 class StorageThread(threading.Thread):
@@ -224,35 +246,92 @@ class StorageThread(threading.Thread):
                 self._logger.exception('Error while backing up "%s".' % path)
 
 
+def _fix_threading_exception_bug():
+    """
+    Fixes a bug in the exception handling of ``threading.Thread``.
+
+    Any uncaught exception should cause ``sys.excepthook`` to be called.
+    However, this does not work for exceptions thrown in threads created
+    via ``threading.Thread``, see https://bugs.python.org/issue1230540.
+
+    This method fixes that problem using the workaround given in the
+    bugrepor above: It monkey-patches ``threading.Thread.__init__`` to
+    dynamically replace a thread's ``run`` method with an error-handling
+    wrapper. The wrapper takes care of calling ``sys.excepthook`` for
+    uncaught exceptions. Monkey-patching ``__init__`` instead of ``run``
+    is necessary to make the fix work for subclasses of ``Thread``.
+
+    Thread instances created before this method is called are not
+    covered by the fix.
+    """
+    old_init = threading.Thread.__init__
+
+    @functools.wraps(old_init)
+    def new_init(self, *args, **kwargs):
+        old_init(self, *args, **kwargs)
+        old_run = self.run
+
+        @functools.wraps(old_run)
+        def run(*args, **kwargs):
+            try:
+                old_run(*args, **kwargs)
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except:
+                sys.excepthook(*sys.exc_info())
+
+        self.run = run
+
+    threading.Thread.__init__ = new_init
+
+
 class Service(service.Service):
     """
     Coba daemon.
     """
     def __init__(self, backup, config):
+        """
+        Constructor.
+
+        ``backup`` is a function that takes a filename and backs up
+        that file.
+
+        ``config`` is an instance of ``coba.config.Configuration``.
+        """
         super(Service, self).__init__('coba', pid_dir=config.pid_dir)
+        self._backup = backup
+        self._config = config
         self.logger.setLevel(config.log_level)
-        self._queue = FileQueue(self.logger, config.idle_wait_time)
-        self._event_handler = EventHandler(self._queue)
         self._observers = []
-        for dir in config.watched_dirs:
-            observer = watchdog.observers.Observer()
-            dir = os.path.abspath(str(dir))
-            observer.schedule(self._event_handler, dir, recursive=True)
-            self._observers.append(observer)
-        self._storage_thread = StorageThread(self._queue, backup, self.logger)
-        self._got_sigterm = threading.Event()
+
+    def _install_exception_hook(self):
+        def hook(type, value, traceback):
+            self.logger.error(str(value), exc_info=(type, value, traceback))
+        sys.excepthook = hook
+        _fix_threading_exception_bug()
 
     def _start(self):
-        self.logger.info('Starting background process...')
+        self.logger.info('Starting backup daemon...')
+        self._queue = FileQueue(self.logger, self._config.idle_wait_time)
         self.logger.debug('Starting observers...')
+        self._event_handler = EventHandler(
+                self._queue, self._config.is_ignored, self.logger)
+        for dir in self._config.watched_dirs:
+            observer = watchdog.observers.Observer()
+            dir = os.path.abspath(str(dir))
+            self.logger.info('Watching "%s".' % dir)
+            observer.schedule(self._event_handler, dir, recursive=True)
+            self._observers.append(observer)
         for observer in self._observers:
             observer.start()
-        self.logger.debug('Starting background thread...')
+        self.logger.debug('Starting storage thread...')
+        self._storage_thread = StorageThread(self._queue, self._backup,
+                                             self.logger)
         self._storage_thread.start()
-        self.logger.info('Background process is running.')
+        self.logger.info('Backup daemon is running.')
 
     def _stop(self):
-        self.logger.info('Shutdown of background process initiated...')
+        self.logger.info('Shutdown of backup daemon initiated...')
         self.logger.debug('Stopping observers...')
         for observer in self._observers:
             observer.stop()
@@ -263,9 +342,10 @@ class Service(service.Service):
         self._queue.join()
         self.logger.debug('Waiting for storage thread to finish...')
         self._storage_thread.join()
-        self.logger.info('Background process has been shutdown.')
+        self.logger.info('Backup daemon has been shutdown.')
 
     def run(self):
+        self._install_exception_hook()
         self._start()
         self.wait_for_sigterm()
         self._stop()

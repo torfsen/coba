@@ -54,7 +54,6 @@ class Test_Coba(object):
 
     def setup(self):
         self.temp_dir = tempfile.mkdtemp()
-        self.config = Configuration(storage_dir=self.path('storage'))
         self.coba = None
 
     def teardown(self):
@@ -66,12 +65,17 @@ class Test_Coba(object):
         return os.path.join(self.temp_dir, p)
 
     def watch(self, *args, **kwargs):
-        self.config.idle_wait_time = kwargs.pop('idle_wait_time', 0)
-        self.config.watched_dirs = [self.path(d) for d in args]
-        for d in self.config.watched_dirs:
+        config_args = {
+            'storage_dir': self.path('storage'),
+            'idle_wait_time': 0,
+            'pid_dir': self.temp_dir,
+            'watched_dirs': [self.path(d) for d in args],
+        }
+        config_args.update(kwargs)
+        config = Configuration(**config_args)
+        for d in config.watched_dirs:
             self.mkdir(d)
-        self.config.pid_dir = self.temp_dir
-        self.coba = Coba(self.config)
+        self.coba = Coba(config)
         self.coba.start(block=5)
 
     def mkdir(self, path):
@@ -103,7 +107,7 @@ class Test_Coba(object):
     def file(self, path):
         return self.coba.file(self.path(path))
 
-    def wait(self, seconds=1.5):
+    def wait(self, seconds=2):
         time.sleep(seconds)
 
     def test_file_creation(self):
@@ -235,4 +239,16 @@ class Test_Coba(object):
         revs[0].restore(target=path)
         eq(self.read('foz/bar'), 'bazinga')
         eq(self.read('foo/bar'), 'buz')
+
+    def test_ignore_file(self):
+        self.watch('foo', ignored=['**/*.bar'])
+        self.write('foo/bar.bar', 'bazinga')
+        hash = self.write('foo/bar.baz', 'bazinga')
+        self.wait()
+        f = self.file('foo/bar.bar')
+        eq(len(f.get_revisions()), 0)
+        f = self.file('foo/bar.baz')
+        revs = f.get_revisions()
+        eq(len(revs), 1)
+        eq(revs[0].hashsum, hash)
 
