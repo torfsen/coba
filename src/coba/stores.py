@@ -143,7 +143,7 @@ class CompressTransformer(Transformer):
     Takes a file and turns it into a compressed file.
     """
 
-    def __init__(self, block_size=2**20):
+    def __init__(self, block_size=2**20):  # flake8: noqa
         super(CompressTransformer, self).__init__()
         self.block_size = block_size
 
@@ -194,7 +194,7 @@ class JSONTransformer(Transformer):
 
     def transform(self, key, value):
         out_file = cStringIO.StringIO()
-        json.dump(value, out_file, separators=(',',':'))
+        json.dump(value, out_file, separators=(',', ':'))
         out_file.seek(0)
         return key, out_file
 
@@ -234,6 +234,7 @@ class ChainedTransformer(Transformer):
 
 
 _undefined = object()
+
 
 class AbstractStore(collections.Mapping):
     """

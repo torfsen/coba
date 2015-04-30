@@ -28,14 +28,12 @@ Command-line interface.
 import datetime
 import functools
 import logging
-import os.path
 import sys
 import traceback
 
 import click
 
 from . import Coba
-from .stores import local_storage_driver
 
 
 log = logging.getLogger(__name__)
@@ -261,7 +259,7 @@ def restore(ctx, path, target, hash):
     target = revs[0].restore(target)
     if target == f.path:
         log.info('Restored content of "%s" from revision "%s".' % (f.path,
-                 revs[0].hashsum ))
+                 revs[0].hashsum))
     else:
         log.info('Restored content of "%s" from revision "%s" to "%s".' % (
                  f.path, revs[0].hashsum, target))

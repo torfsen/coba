@@ -34,7 +34,7 @@ import pathlib
 __all__ = ['binary_file_iterator', 'is_in_dir', 'match_path', 'normalize_path']
 
 
-def binary_file_iterator(f, block_size=2**20):
+def binary_file_iterator(f, block_size=2**20):  # flake8: noqa
     """
     Generator for iterating over binary files in blocks.
 

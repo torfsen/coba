@@ -28,7 +28,6 @@ Continuous backups.
 import collections
 import datetime
 import json
-import threading
 import time
 
 import pathlib
@@ -172,7 +171,7 @@ class Revision(object):
         self.timestamp = timestamp
         self.hashsum = hashsum
 
-    def restore(self, target=None, block_size=2**20):
+    def restore(self, target=None, block_size=2**20):  # flake8: noqa
         """
         Restore the revision.
 

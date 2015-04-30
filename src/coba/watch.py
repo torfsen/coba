@@ -242,7 +242,7 @@ class StorageThread(threading.Thread):
                 self._logger.debug('Backing up "%s".' % path)
                 self._backup(path)
                 self._logger.info('Backed up "%s".' % path)
-            except Exception as e:
+            except Exception:
                 self._logger.exception('Error while backing up "%s".' % path)
 
 
@@ -315,7 +315,7 @@ class Service(service.Service):
         self._queue = FileQueue(self.logger, self._config.idle_wait_time)
         self.logger.debug('Starting observers...')
         self._event_handler = EventHandler(
-                self._queue, self._config.is_ignored, self.logger)
+            self._queue, self._config.is_ignored, self.logger)
         for dir in self._config.watched_dirs:
             observer = watchdog.observers.Observer()
             dir = os.path.abspath(str(dir))

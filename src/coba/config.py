@@ -30,8 +30,6 @@ import errno
 import json
 import os.path
 
-import pathlib
-
 from .utils import is_in_dir, match_path
 
 
@@ -120,8 +118,8 @@ class Configuration(object):
 
         If ``path`` is not given the default location is used.
         """
-        path = path or default_location()
-        attrs = {key:value for key, value in self.__dict__.iteritems() if not
+        path = path or self.default_location()
+        attrs = {key: value for key, value in self.__dict__.iteritems() if not
                  key.startswith('_')}
         with codecs.open(path, 'w', encoding='utf8') as f:
             json.dump(attrs, f)
