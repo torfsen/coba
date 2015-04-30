@@ -26,11 +26,12 @@ Various utilities.
 """
 
 import os.path
+import re
 
 import pathlib
 
 
-__all__ = ['binary_file_iterator', 'is_in_dir', 'normalize_path']
+__all__ = ['binary_file_iterator', 'is_in_dir', 'match_path', 'normalize_path']
 
 
 def binary_file_iterator(f, block_size=2**20):
@@ -70,3 +71,72 @@ def is_in_dir(candidate, parent):
     ``candidate == parent`` then the function returns ``False``.
     """
     return pathlib.Path(parent) in pathlib.Path(candidate).parents
+
+
+def match_path(pattern, path):
+    r"""
+    Advanced wildcard-based path matching.
+
+    This function is similar to those provided by Python's ``fnmatch``
+    module but provides additional features inspired by the git's
+    ignore patterns:
+
+    * A single ``*`` matches 0 or more arbitrary characters, except
+      ``/``.
+
+    * A ``?`` matches exactly 1 arbitrary character, except ``/``.
+
+    Double asterisks (``**``) are used for matching multiple
+    directories:
+
+    * A trailing ``/**`` matches everything in the preceeding
+      directory. For example, ``abc/**`` matches ``abc``, ``abc/``, and
+      ``abc/def/ghi``.
+
+    * A leading ``**/`` matches in all directories. For example,
+      ``**/abc`` matches ``abc``, ``/abc``, ``123/abc``, and
+      ``123/456/abc``.
+
+    * ``/**/`` matches one or more directories. For example,
+      ``abc/**/def`` matches ``abc/def``, ``abc/123/def``, and
+      ``abc/123/456/def`` but not ``abcdef``.
+
+    Any other use of ``**`` raises a ``ValueError``.
+
+    Any special character can be escaped using ``\``: ``\*`` matches
+    ``*`` but not ``foo``. To match a single ``\`` use ``\\``.
+    """
+    i = 0
+    parts = []
+    suffix = ''
+    if pattern.startswith('**/'):
+        parts.append('(.*/)?')
+        i = 3
+    while pattern.endswith('/**'):
+        suffix = '(/.*)?'
+        pattern = pattern[:-3]
+    while i < len(pattern):
+        c = pattern[i]
+        if pattern[i:i + 4] == '/**/':
+            parts.append('/(.*/)?')
+            i += 4
+        elif c == '*':
+            if pattern[i:i + 2] == '**':
+                raise ValueError(('Invalid pattern (illegal use of "**" at ' +
+                                 'position %d).') % (i + 1))
+            parts.append('[^/]*')
+            i += 1
+        elif c == '?':
+            parts.append('[^/]')
+            i += 1
+        elif c == '\\':
+            if i == len(pattern) - 1:
+                raise ValueError(('Invalid pattern (illegal use of "\\" at ' +
+                                 'position %d).') % (i + 1))
+            parts.append(re.escape(pattern[i + 1]))
+            i += 2
+        else:
+            parts.append(re.escape(c))
+            i += 1
+    regex = ''.join(parts) + suffix + '\Z(?s)'
+    return re.match(regex, str(path)) is not None

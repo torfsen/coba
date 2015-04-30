@@ -27,13 +27,12 @@ Configuration management.
 
 import codecs
 import errno
-import fnmatch
 import json
 import os.path
 
 import pathlib
 
-from .utils import is_in_dir
+from .utils import is_in_dir, match_path
 
 
 class Configuration(object):
@@ -78,7 +77,7 @@ class Configuration(object):
     def __init__(self, **kwargs):
         home = os.path.expanduser('~')
         self.idle_wait_time = 5
-        self.ignored = ['.*']
+        self.ignored = ['**/.*']
         self.log_level = 1
         self.pid_dir = '/tmp'
         self.storage_dir = os.path.join(home, '.coba', 'storage')
@@ -134,6 +133,6 @@ class Configuration(object):
         if is_in_dir(path, self.storage_dir):
             return True
         for pattern in self.ignored:
-            if fnmatch.fnmatchcase(str(path), pattern):
+            if match_path(pattern, path):
                 return True
 

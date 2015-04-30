@@ -211,7 +211,7 @@ class Test_Coba(object):
         eq(self.read('foo/bar'), 'buz')
 
     def test_ignore_file(self):
-        self.watch('foo', ignored=['*.bar'])
+        self.watch('foo', ignored=['**/*.bar'])
         self.write('foo/bar.bar', 'bazinga')
         hash = self.write('foo/bar.baz', 'bazinga')
         self.wait()
