@@ -239,14 +239,7 @@ class Coba(object):
         The return value is ``True`` if the daemon process has been
         started and ``False`` otherwise.
         """
-        self.service.start()
-        if block:
-            if block == True:
-                block = float('Inf')
-            timeout = time.time() + block
-            while not self.service.is_running() and time.time() < timeout:
-                time.sleep(0.1)
-        return self.service.is_running()
+        return self.service.start(block)
 
     def stop(self, block=False):
         """
@@ -261,14 +254,7 @@ class Coba(object):
         The return value is ``True`` if the daemon process has been
         stopped and ``False`` otherwise.
         """
-        self.service.stop()
-        if block:
-            if block == True:
-                block = float('Inf')
-            timeout = time.time() + block
-            while self.service.is_running() and time.time() < timeout:
-                time.sleep(0.1)
-        return not self.service.is_running()
+        return self.service.stop(block)
 
     def kill(self):
         """
