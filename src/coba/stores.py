@@ -22,7 +22,9 @@
 # THE SOFTWARE.
 
 """
-Data stores based on LibCloud storage.
+Data stores based on LibCloud_ storage.
+
+.. _LibCloud: https://libcloud.apache.org
 """
 
 import collections
@@ -97,7 +99,7 @@ def local_storage_driver(path):
     automatically created if it does not exist.
 
     Returns an instance of
-    ``libcloud.storage.drivers.local.LocalStorageDriver``.
+    :py:class:`libcloud.storage.drivers.local.LocalStorageDriver`.
     """
     try:
         os.mkdir(path)
@@ -118,9 +120,8 @@ class Transformer(object):
     During upload, transformers may transform the key, too, while
     during downloads only the value transformation is inverted. This
     allows transformers to provide a key based on the transformed
-    content (see, for example, ``CompressAndHashTransformer``).
+    content (see, for example, :py:class:`CompressAndHashTransformer`).
     """
-
     def transform(self, key, value):
         """
         Transform a key/value pair.
@@ -142,7 +143,6 @@ class CompressTransformer(Transformer):
     """
     Takes a file and turns it into a compressed file.
     """
-
     def __init__(self, block_size=2**20):  # flake8: noqa
         super(CompressTransformer, self).__init__()
         self.block_size = block_size
@@ -170,7 +170,6 @@ class CompressAndHashTransformer(CompressTransformer):
     Takes a file and turns it into a compressed file. The key is
     replaced by the data's hashsum.
     """
-
     def transform(self, key, value):
         hasher = hashlib.sha256()
         temp_file = tempfile.TemporaryFile()
@@ -191,7 +190,6 @@ class JSONTransformer(Transformer):
     """
     Takes a Python object and turns it into a JSON-encoded file.
     """
-
     def transform(self, key, value):
         out_file = cStringIO.StringIO()
         json.dump(value, out_file, separators=(',', ':'))
@@ -207,14 +205,14 @@ class ChainedTransformer(Transformer):
     """
     Chain several transformers into one.
     """
-
     def __init__(self, transformers):
         """
         Constructor.
 
-        ``transformers`` is a list of ``Transformer`` instances. During
-        upload, these are applied in left-to-right fashion. During
-        download the transformations are inverted from right to left.
+        ``transformers`` is a list of :py:class:`Transformer` instances.
+        During upload, these are applied in left-to-right fashion.
+        During download the transformations are inverted from right to
+        left.
 
         The caller is responsible for ensuring that the transformers
         are compatiable, i.e. that the output of one transformer is an
@@ -240,7 +238,6 @@ class AbstractStore(collections.Mapping):
     """
     Abstract data store for LibCloud storage.
     """
-
     def __init__(self, driver, container_name):
         """
         Constructor.
@@ -255,9 +252,9 @@ class AbstractStore(collections.Mapping):
         """
         Retrieve data from the store.
 
-        If no entry for the given key exists a ``KeyError`` is raised
-        unless ``default`` is provided, in which case that value is
-        returned instead.
+        If no entry for the given key exists a :py:class:`KeyError` is
+        raised unless ``default`` is provided, in which case that value
+        is returned instead.
         """
         try:
             return self[key]
@@ -311,7 +308,6 @@ class StringStore(AbstractStore):
     """
     Store for storing plain strings.
     """
-
     def put(self, key, value):
         self._container.upload_object_via_stream(value, key)
         return key
@@ -331,15 +327,15 @@ class TransformingStore(AbstractStore):
     Cloud storage data store with built-in value transformations.
 
     This class automatically transforms values during up- and download
-    based on a ``Transformer`` instance.
+    based on a :py:class:`Transformer` instance.
     """
-
     def __init__(self, driver, container_name, transformer):
         """
         Constructor.
 
-        ``transformer`` is an instance of ``Transformer`` which must return
-        an open file-like object during the upload transformation.
+        ``transformer`` is an instance of :py:class:`Transformer` which
+        must return an open file-like object during the upload
+        transformation.
         """
         super(TransformingStore, self).__init__(driver, container_name)
         self._transformer = transformer
@@ -378,7 +374,6 @@ class JSONStore(TransformingStore):
     Data is transformed into JSON-encoded strings before upload and
     decoded after download.
     """
-
     def __init__(self, driver, container_name):
         super(JSONStore, self).__init__(driver, container_name,
                                         JSONTransformer())
@@ -387,8 +382,8 @@ class JSONStore(TransformingStore):
         """
         Store data in the store.
 
-        ``value`` is anything that Python's ``json`` module can encode
-        into a JSON string.
+        ``value`` is anything that Python's :py:mod:`json` module can
+        encode into a JSON string.
         """
         return super(JSONStore, self)._put(key, value)
 
@@ -404,7 +399,6 @@ class BlobStore(TransformingStore):
     computed when data is stored and can then be used to retrieve the
     data at a later point.
     """
-
     def __init__(self, driver, container_name):
         super(BlobStore, self).__init__(driver, container_name,
                                         CompressAndHashTransformer())
@@ -428,8 +422,9 @@ class BlobStore(TransformingStore):
         Retrieve data from the blob store in the form of a file-object.
 
         Returns data that was previously stored via ``put``. The return
-        value is a ``gzip.GzipFile`` instance which behaves like a
-        standard Python file object and performs the decompression.
+        value is a :py:class:`gzip.GzipFile` instance which behaves
+        like a standard Python file object and performs the
+        decompression.
         """
         return super(BlobStore, self)._get(hashsum)
 
@@ -444,10 +439,9 @@ class PathStore(StringStore):
     """
     Store for storing plain strings with support for paths as keys.
 
-    This is basically a ``StringStore`` but with additional plumbing to
-    allow paths to be used as keys.
+    This is basically a :py:class:`StringStore` but with additional
+    plumbing to allow for paths to be used as keys.
     """
-
     def _path2key(self, path):
         """
         Convert a path to a key.

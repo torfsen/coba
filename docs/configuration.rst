@@ -52,8 +52,8 @@ Use ``\`` to escape a special character: ``\*`` matches ``*`` but not ``foo``.
 To match a single ``\`` use ``\\``.
 
 
-**Default:** ``["**/.*"]`` (this ignores all files and directories whose name
-starts with a dot)
+**Default:** ``["**/.*"/**]`` (this ignores all files and directories whose
+name starts with a dot)
 
 
 .. _config_log_level:
@@ -111,7 +111,7 @@ The following example configuration file corresponds to the default configuratio
 
     {
         "idle_wait_time": 5,
-        "ignored": ["**/.*"],
+        "ignored": ["**/.*/**"],
         "log_level": 1,
         "pid_dir": "~/.coba",
         "storage_dir": "~/.coba/storage",

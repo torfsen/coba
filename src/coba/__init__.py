@@ -22,7 +22,7 @@
 # THE SOFTWARE.
 
 """
-Continuous backups.
+Coba main module.
 """
 
 import collections
@@ -38,6 +38,8 @@ from .utils import normalize_path
 from .watch import Service
 
 __version__ = '0.1.0'
+
+__all__ = ['Coba', 'File', 'Revision']
 
 
 class _JSONEncoder(json.JSONEncoder):
@@ -63,8 +65,8 @@ class File(object):
         """
         Constructor.
 
-        Do not instantiate this class directly. Use ``Coba.file`` or
-        ``Coba.files`` instead.
+        Do not instantiate this class directly. Use :py:meth:`Coba.file`
+        or :py:meth:`Coba.files` instead.
         """
         self._coba = coba
         self.path = normalize_path(path)
@@ -82,7 +84,8 @@ class File(object):
         """
         Get the file's revisions.
 
-        Returns a list of the file's revisions.
+        Returns a list of the file's revisions as instances of
+        :py:class:`Revision`.
         """
         try:
             s = self._coba._info_store[str(self.path)]
@@ -100,7 +103,7 @@ class File(object):
         """
         Set the file's revisions.
 
-        ``revisions`` is a list of instances of ``Revision``.
+        ``revisions`` is a list of instances of :py:meth:`Revision`.
         """
         self._coba._info_store[str(self.path)] = json.dumps(
             revisions, separators=(',', ':'), cls=_JSONEncoder)
@@ -109,8 +112,9 @@ class File(object):
         """
         Create a new revision.
 
-        The current content of the file is stored in the
-        storage. The corresponding revision is returned.
+        The current content of the file is stored in the storage. The
+        corresponding revision is returned as an instance of
+        :py:class:`Revision`.
         """
         with self.path.open('rb') as f:
             hashsum = self._coba._blob_store.put(f)
@@ -128,7 +132,8 @@ class File(object):
         """
         Filter revisions.
 
-        By default, all revisions are returned.
+        By default, all revisions are returned as a list of instances of
+        :py:class:`Revision`.
 
         If ``hash`` is not ``None`` then only revisions whose hash
         starts with the given value are returned.
@@ -165,7 +170,7 @@ class Revision(object):
         Constructor.
 
         Do not instantiate this class directly. Use
-        ``File.get_revisions`` instead.
+        :py:meth:`File.get_revisions` instead.
         """
         self.file = file
         self.timestamp = timestamp
@@ -203,19 +208,19 @@ class Revision(object):
 
 class Coba(object):
     """
-    Main class of coba.
+    Main class of Coba.
 
-    This class assembles the different parts of the coba systems and
+    This class assembles the different parts of the Coba system and
     offers a high-level interface for perfoming continuous backups.
     """
     def __init__(self, config=None):
         """
         Constructor.
 
-        ``config`` is a ``coba.config.Configuration`` instance. If it
-        is not given the configuration is loaded from its default
-        location (``~/.coba/.config``) if that file exists. Otherwise
-        the default configuration is used.
+        ``config`` is a :py:class:`coba.config.Configuration` instance.
+        If it is not given the configuration is loaded from its default
+        location (``~/.coba/.config.json``) if that file exists.
+        Otherwise the default configuration is used.
         """
         self.config = config or Configuration.load()
         driver = local_storage_driver(self.config.storage_dir)
@@ -279,7 +284,8 @@ class Coba(object):
         """
         List stored files.
 
-        This generator yields all files in the storage.
+        This generator yields all files in the storage as instances of
+        :py:class:`File`.
         """
         for path in self._info_store:
             yield File(self, path)
@@ -288,7 +294,7 @@ class Coba(object):
         """
         Get information about a file.
 
-        Returns an instance of ``File`` for the local file with the
+        Returns an instance of :py:class:`File` for the file with the
         given path.
         """
         return File(self, path)

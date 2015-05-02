@@ -1,7 +1,7 @@
 Coba - a continuous backup system
 =================================
 Coba backs up your files whenever you change them, so you don't have to
-remember to do backups anymore and never again loose data because your
+remember to do backups anymore and never again lose data because your
 backups are too old.
 
 **Coba is in early development and by no means ready for use as your

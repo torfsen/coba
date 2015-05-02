@@ -22,7 +22,13 @@
 # THE SOFTWARE.
 
 """
-Command-line interface.
+Coba's command-line interface.
+
+The routines in this module are exposed as Coba's command-line interface
+via the Click_ library. They are not directly callable from within
+Python.
+
+.. _Click: http://click.pocoo.org
 """
 
 import datetime

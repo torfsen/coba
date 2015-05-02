@@ -1,7 +1,7 @@
 Introduction
 ############
 Coba is a backup tool that backs up your files whenever you change them, so
-you don't have to remember to do backups anymore and never again loose data
+you don't have to remember to do backups anymore and never again lose data
 because your backups are too old.
 
 .. warning::

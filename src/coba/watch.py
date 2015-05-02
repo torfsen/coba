@@ -44,16 +44,24 @@ class FileQueue(object):
     Queue for active files.
 
     This class provides the communication between incoming file system
-    events (from ``EventHandler``) and the storage of the corresponding
-    file modifications (by ``StorageDaemon``).
+    events (from :py:class:`EventHandler`) and the storage of the
+    corresponding file modifications (by :py:class:`StorageThread`).
 
     Iteration over an instance yields active files in the order of their
     unprocessed modifications in an infinite loop (when there are no
-    active files the iterator blocks). Use the ``join`` method to
+    active files the iterator blocks). Use the :py:meth:`join` method to
     automatically exit the loop once all files have been processed.
     """
 
     def __init__(self, logger, idle_wait_time=5):
+        """
+        Constructor.
+
+        ``logger`` is an instance of :py:class:`logging.Logger` and
+        ``idle_wait_time`` is the time (in seconds) to wait after
+        receiving a file modification event before dispatching the file
+        for backup.
+        """
         self._logger = logger
         self.idle_wait_time = idle_wait_time
         self._queue = pqdict.PQDict()
@@ -64,6 +72,8 @@ class FileQueue(object):
     def register_file_modification(self, path):
         """
         Register a file's modification.
+
+        This schedules the file for backup.
         """
         path = str(normalize_path(path))
         with self.is_not_empty:
@@ -74,6 +84,9 @@ class FileQueue(object):
     def register_file_deletion(self, path):
         """
         Register a file's deletion.
+
+        If the file was previously scheduled for backup but not backed
+        up, yet, then it is unscheduled.
         """
         path = str(normalize_path(path))
         with self.is_not_empty:
@@ -88,6 +101,9 @@ class FileQueue(object):
     def register_directory_deletion(self, path):
         """
         Register a directory's deletion.
+
+        Any scheduled but so far unprocessed files within the directory
+        are unscheduled.
         """
         path = str(normalize_path(path))
         with self.is_not_empty:
@@ -104,8 +120,8 @@ class FileQueue(object):
 
         This method returns the file with the oldest unprocessed
         modification. If there are no active files then the call blocks
-        until the next call to ``register_event`` is made. See ``join``
-        for breaking the block.
+        until the next call to :py:meth:`register_event` is made. See
+        :py:meth:`join` for breaking the block.
         """
         while True:
             with self.is_not_empty:
@@ -134,14 +150,15 @@ class FileQueue(object):
         Block until queue is empty.
 
         This method blocks until the list of active files is empty.
-        Once this is the case, calling ``next`` raises ``StopIteration``
-        instead of blocking. Blocking calls to ``next`` that were made
-        before the call to ``join`` are terminated in the same way.
+        Once this is the case, calling :py:meth:`next` raises
+        :py:class:`StopIteration` instead of blocking. Blocking calls to
+        :py:meth:`next` that were made before the call to
+        :py:meth:`join` are terminated in the same way.
 
         New events are still accepted while the active files are being
         processed. Make sure to first stop the event provider before
-        calling ``join``, otherwise the event provider might keep
-        ``join`` from exiting by always adding new events.
+        calling :py:meth:`join`, otherwise the event provider might keep
+        :py:meth:`join` from exiting by always adding new events.
         """
         with self.is_not_empty:
             self._stop = True
@@ -158,12 +175,12 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
         """
         Constructor.
 
-        ``queue`` is an instance of ``FileQueue``.
+        ``queue`` is an instance of :py:class:`FileQueue`.
 
         ``is_ignored`` is a function that, given a file path, returns
         ``True`` if the file is to be ignored and ``False`` otherwise.
 
-        ``logger`` is a ``logging.Logger`` instance.
+        ``logger`` is a :py:class:`logging.Logger` instance.
         """
         super(EventHandler, self).__init__()
         self._queue = queue
@@ -216,7 +233,7 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
 
 class StorageThread(threading.Thread):
     """
-    Daemon for storing file modifications.
+    Thread for storing file modifications.
 
     File modifications are taken from the file queue and stored.
     """
@@ -224,12 +241,12 @@ class StorageThread(threading.Thread):
         """
         Constructor.
 
-        ``queue`` is a queue of active files (see ``FileQueue``).
+        ``queue`` is an instance of :py:class:`FileQueue`.
 
         ``backup`` is a callable that takes a file path and backs up
         the file.
 
-        ``logger`` is a ``logging.Logger`` instance.
+        ``logger`` is a :py:class:`logging.Logger` instance.
         """
         super(StorageThread, self).__init__(*args, **kwargs)
         self._queue = queue
@@ -248,18 +265,21 @@ class StorageThread(threading.Thread):
 
 def _fix_threading_exception_bug():
     """
-    Fixes a bug in the exception handling of ``threading.Thread``.
+    Fixes the exception handling of :py:class:`threading.Thread`.
 
-    Any uncaught exception should cause ``sys.excepthook`` to be called.
-    However, this does not work for exceptions thrown in threads created
-    via ``threading.Thread``, see https://bugs.python.org/issue1230540.
+    Any uncaught exception should cause :py:func:`sys.excepthook` to be
+    called. However, this does not work for exceptions thrown in threads
+    created via :py:class:`threading.Thread`, see
+    https://bugs.python.org/issue1230540.
 
     This method fixes that problem using the workaround given in the
-    bugrepor above: It monkey-patches ``threading.Thread.__init__`` to
-    dynamically replace a thread's ``run`` method with an error-handling
-    wrapper. The wrapper takes care of calling ``sys.excepthook`` for
-    uncaught exceptions. Monkey-patching ``__init__`` instead of ``run``
-    is necessary to make the fix work for subclasses of ``Thread``.
+    bugreport above: It monkey-patches
+    :py:meth:`threading.Thread.__init__`` to dynamically replace a
+    thread's :py:meth:`threading.Thread.run` method with an
+    error-handling wrapper. The wrapper takes care of calling
+    :py:func:`sys.excepthook` for uncaught exceptions. Monkey-patching
+    ``__init__`` instead of ``run`` is necessary to make the fix work
+    for subclasses of ``Thread``.
 
     Thread instances created before this method is called are not
     covered by the fix.
@@ -287,7 +307,7 @@ def _fix_threading_exception_bug():
 
 class Service(service.Service):
     """
-    Coba daemon.
+    The Coba backup daemon.
     """
     def __init__(self, backup, config):
         """
@@ -296,7 +316,8 @@ class Service(service.Service):
         ``backup`` is a function that takes a filename and backs up
         that file.
 
-        ``config`` is an instance of ``coba.config.Configuration``.
+        ``config`` is an instance of
+        :py:class:`coba.config.Configuration`.
         """
         super(Service, self).__init__('coba', pid_dir=config.pid_dir)
         self._backup = backup

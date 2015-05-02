@@ -52,9 +52,13 @@ def normalize_path(path):
     """
     Normalize file path.
 
-    ``path`` can either be a string or a ``pathlib.Path`` instance.
+    ``path`` can either be a string or a :py:class:`pathlib.Path`
+    instance.
 
-    The return value is a ``Path`` instance.
+    The path is normalized using :py:func:`os.path.realpath` and
+    :py:func:`os.path.normcase`.
+
+    The return value is a :py:class:`pathlib.Path` instance.
     """
     return pathlib.Path(os.path.normcase(os.path.realpath(str(path))))
 
@@ -140,3 +144,4 @@ def match_path(pattern, path):
             i += 1
     regex = ''.join(parts) + suffix + '\Z(?s)'
     return re.match(regex, str(path)) is not None
+

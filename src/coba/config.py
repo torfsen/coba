@@ -22,7 +22,7 @@
 # THE SOFTWARE.
 
 """
-Configuration management.
+Coba's configuration management.
 """
 
 import codecs
@@ -37,18 +37,25 @@ class Configuration(object):
     """
     Coba configuration.
 
-    :idle_wait_time:
-       Time (in seconds) that a file has to be idle after a
-       modification before it is backed up. This is a feature to avoid
-       backing up files during ongoing modifications.
+    This class encapsulates the configuration of a Coba instance. The
+    following configuration settings are available as instance
+    attributes:
 
-    :ignored:
+    .. py:attribute:: idle_wait_time
+
+        Time (in seconds) that a file has to be idle after a
+        modification before it is backed up. This is a feature to avoid
+        backing up files during ongoing modifications.
+
+    .. py:attribute:: ignored
+
         Files that should be ignored. This is a list of patterns, a file
         that matches at least one of these patterns is ignored by Coba.
-        The syntax for the patterns is that of Python's ``fnmatch``
-        module. Matching is done case-sensitively.
+        The syntax for the patterns is that of
+        :py:func:`coba.utils.match_path`.
 
-    :log_level:
+    .. py:attribute:: log_level
+
         Verbosity of the log output. The higher this value is, the less
         verbose the log output will be. A value of 10 shows debugging
         output, 20 shows general information, 30 shows warnings, and 40
@@ -56,15 +63,18 @@ class Configuration(object):
         daemon to syslog. The verbosity of the ``coba`` command line
         utility can be controlled via its ``-v`` argument.
 
-    :pid_dir:
+    .. py:attribute:: pid_dir
+
         Directory where the PID lock file of the service process is
         stored.
 
-    :storage_dir:
-       Directory where the backed up data is stored. This directory is
-       created if it does not exist.
+    .. py:attribute:: storage_dir
 
-    :watched_dirs:
+        Directory where the backed up data is stored. This directory is
+        created if it does not exist.
+
+    .. py:attribute:: watched_dirs
+
         A list of directories to be watched. Files within these
         directories or their subdirectories are backed up after they
         have been modified. The directories should be disjoint, i.e.
@@ -73,6 +83,11 @@ class Configuration(object):
     """
 
     def __init__(self, **kwargs):
+        """
+        Constructor.
+
+        Any configuration setting can be set using a keyword argument.
+        """
         home = os.path.expanduser('~')
         self.idle_wait_time = 5
         self.ignored = ['**/.*']
@@ -88,6 +103,9 @@ class Configuration(object):
 
     @staticmethod
     def default_location():
+        """
+        Returns the default location of the Coba configuration file.
+        """
         return os.path.join(os.path.expanduser('~'), '.coba', 'config')
 
     @classmethod
