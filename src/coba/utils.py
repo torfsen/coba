@@ -35,6 +35,7 @@ import pathlib
 
 __all__ = [
     'binary_file_iterator',
+    'expand_path',
     'is_in_dir',
     'make_dirs',
     'match_path',
@@ -153,11 +154,20 @@ def match_path(pattern, path):
 def make_dirs(path):
     """
     Like ``os.makedirs``, but without error if the directory exists.
-
     """
     try:
         os.makedirs(path)
     except OSError as e:
         if e.errno != errno.EEXIST:
             raise
+
+
+def expand_path(path):
+    """
+    Expand ``~`` and environment variables in a path.
+
+    This is a combination of ``os.path.expanduser`` and
+    ``os.path.expandvars``.
+    """
+    return os.path.expandvars(os.path.expanduser(path))
 

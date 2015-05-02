@@ -30,7 +30,7 @@ import errno
 import json
 import os.path
 
-from .utils import is_in_dir, match_path
+from .utils import expand_path, is_in_dir, match_path
 
 
 class Configuration(object):
@@ -73,10 +73,10 @@ class Configuration(object):
     """
 
     def __init__(self, **kwargs):
-        home = os.path.expanduser('~')
+        home = expand_path('~')
         coba_dir = os.path.join(home, '.coba')
         self.idle_wait_time = 5
-        self.ignored = ['**/.*']
+        self.ignored = ['**/.*/**']
         self.log_level = 1
         self.pid_dir = coba_dir
         self.storage_dir = os.path.join(coba_dir, 'storage')
@@ -89,7 +89,7 @@ class Configuration(object):
 
     @staticmethod
     def default_location():
-        return os.path.join(os.path.expanduser('~'), '.coba', 'config')
+        return os.path.join(expand_path('~'), '.coba', 'config.json')
 
     @classmethod
     def load(cls, path=None):
@@ -111,6 +111,10 @@ class Configuration(object):
         else:
             with codecs.open(path, 'r', encoding='utf8') as f:
                 data = json.load(f)
+        data['ignored'] = [expand_path(p) for p in data['ignored']]
+        data['pid_dir'] = expand_path(data['pid_dir'])
+        data['storage_dir'] = expand_path(data['storage_dir'])
+        data['watched_dirs'] = [expand_path(p) for p in data['watched_dirs']]
         return cls(**data)
 
     def save(self, path=None):
