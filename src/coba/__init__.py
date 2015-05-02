@@ -186,6 +186,7 @@ class Revision(object):
         target = pathlib.Path(target or self.file.path)
         if target.is_dir():
             target = target.joinpath(self.file.path.name)
+        target = normalize_path(target)
         with self.file._coba._blob_store.get_file(self.hashsum) as in_file:
             with target.open('wb') as out_file:
                 while True:
