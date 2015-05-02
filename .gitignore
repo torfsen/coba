@@ -2,6 +2,7 @@
 /dist/
 /venv/
 /src/coba.egg-info/
+/docs/_build/
 
 *.swp
 *.pyc
