@@ -34,7 +34,7 @@ import pathlib
 
 from .config import Configuration
 from .stores import BlobStore, local_storage_driver, PathStore
-from .utils import normalize_path
+from .utils import make_dirs, normalize_path
 from .watch import Service
 
 __version__ = '0.1.0'
@@ -191,6 +191,7 @@ class Revision(object):
         target = pathlib.Path(target or self.file.path)
         if target.is_dir():
             target = target.joinpath(self.file.path.name)
+        target = normalize_path(target)
         with self.file._coba._blob_store.get_file(self.hashsum) as in_file:
             with target.open('wb') as out_file:
                 while True:
@@ -223,6 +224,7 @@ class Coba(object):
         Otherwise the default configuration is used.
         """
         self.config = config or Configuration.load()
+        make_dirs(self.config.pid_dir)
         driver = local_storage_driver(self.config.storage_dir)
         self._blob_store = BlobStore(driver, 'coba-blobs')
         self._info_store = PathStore(driver, 'coba-info')
