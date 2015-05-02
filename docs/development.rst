@@ -13,6 +13,13 @@ Coba is available under the `MIT license
 <http://opensource.org/licenses/MIT>`_.
 
 
+Tests
+=====
+Use the ``runtests.py`` script to execute the tests. Please make sure to
+`create an issue <https://github.com/torfuspolymorphus/coba/issues>`_ if
+any of the tests fail.
+
+
 API Reference
 =============
 

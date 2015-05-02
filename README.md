@@ -8,36 +8,8 @@ backups are too old.
 primary backup system. It will probably corrupt your data, break your
 heart and eat your homework. You have been warned.**
 
-
-Development
------------
-First clone the Coba repository:
-
-    $ git clone https://github.com/torfuspolymorphus/coba.git
-
-Then create a virtual env and activate it:
-
-    $ cd coba
-    $ virtualenv venv
-    $ source venv/bin/activate
-
-Install all packages that are necessary for development:
-
-    $ pip install -r requirements.txt
-
-Also install Coba itself as an editable package, which creates the `coba`
-command line executable thanks to Click's
-[setuptools integration](http://click.pocoo.org/4/setuptools/):
-
-    $ pip install --editable .
-
-At this point you should be able to use the `coba` command:
-
-    $ coba --help
-
-Now that your environment is set up you should run the tests:
-
-    $ ./runtests.py
+For more information please refer to the
+[documentation](http://coba.rtfd.org/).
 
 Make sure to [create an issue](https://github.com/torfuspolymorphus/coba/issues)
 if any of the tests fail.
