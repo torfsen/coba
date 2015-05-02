@@ -74,11 +74,12 @@ class Configuration(object):
 
     def __init__(self, **kwargs):
         home = os.path.expanduser('~')
+        coba_dir = os.path.join(home, '.coba')
         self.idle_wait_time = 5
         self.ignored = ['**/.*']
         self.log_level = 1
-        self.pid_dir = '/tmp'
-        self.storage_dir = os.path.join(home, '.coba', 'storage')
+        self.pid_dir = coba_dir
+        self.storage_dir = os.path.join(coba_dir, 'storage')
         self.watched_dirs = [home]
         for key, value in kwargs.iteritems():
             if (not key.startswith('_')) and hasattr(self, key):

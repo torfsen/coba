@@ -25,13 +25,21 @@
 Various utilities.
 """
 
+import errno
+import os
 import os.path
 import re
 
 import pathlib
 
 
-__all__ = ['binary_file_iterator', 'is_in_dir', 'match_path', 'normalize_path']
+__all__ = [
+    'binary_file_iterator',
+    'is_in_dir',
+    'make_dirs',
+    'match_path',
+    'normalize_path'
+]
 
 
 def binary_file_iterator(f, block_size=2**20):  # flake8: noqa
@@ -140,3 +148,16 @@ def match_path(pattern, path):
             i += 1
     regex = ''.join(parts) + suffix + '\Z(?s)'
     return re.match(regex, str(path)) is not None
+
+
+def make_dirs(path):
+    """
+    Like ``os.makedirs``, but without error if the directory exists.
+
+    """
+    try:
+        os.makedirs(path)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
+

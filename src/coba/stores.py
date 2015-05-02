@@ -27,17 +27,15 @@ Data stores based on LibCloud storage.
 
 import collections
 import cStringIO
-import errno
 import json
 import gzip
 import hashlib
-import os
 import tempfile
 
 import libcloud.storage.types
 import libcloud.storage.drivers.local
 
-from .utils import binary_file_iterator, normalize_path
+from .utils import binary_file_iterator, make_dirs, normalize_path
 
 
 __all__ = [
@@ -99,11 +97,7 @@ def local_storage_driver(path):
     Returns an instance of
     ``libcloud.storage.drivers.local.LocalStorageDriver``.
     """
-    try:
-        os.mkdir(path)
-    except OSError as e:
-        if e.errno != errno.EEXIST:
-            raise
+    make_dirs(path)
     return libcloud.storage.drivers.local.LocalStorageDriver(path)
 
 
