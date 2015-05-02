@@ -11,9 +11,6 @@ heart and eat your homework. You have been warned.**
 For more information please refer to the
 [documentation](http://coba.rtfd.org/).
 
-Make sure to [create an issue](https://github.com/torfuspolymorphus/coba/issues)
-if any of the tests fail.
-
 
 License
 -------
