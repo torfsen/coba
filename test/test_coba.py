@@ -34,7 +34,8 @@ import shutil
 import tempfile
 import time
 
-from nose.tools import eq_ as eq, ok_ as ok
+from nose.tools import (eq_ as eq, ok_ as ok, assert_almost_equal,
+                        assert_not_almost_equal)
 
 from coba import Coba
 from coba.config import Configuration
@@ -104,10 +105,16 @@ class Test_Coba(object):
         target = self.path(target)
         os.rename(src, target)
 
+    def set_mtime(self, path, mtime):
+        os.utime(self.path(path), (mtime, mtime))
+
+    def get_mtime(self, path):
+        return os.path.getmtime(self.path(path))
+
     def file(self, path):
         return self.coba.file(self.path(path))
 
-    def wait(self, seconds=2):
+    def wait(self, seconds=3):
         time.sleep(seconds)
 
     def test_file_creation(self):
@@ -137,6 +144,17 @@ class Test_Coba(object):
         revs = f.get_revisions()
         eq(len(revs), 1)
         eq(revs[0].hashsum, hash)
+
+    def test_mtime_modification(self):
+        hash = self.write('foo/bar', 'bazinga')
+        self.watch('foo')
+        self.set_mtime('foo/bar', 10)
+        self.wait()
+        f = self.file('foo/bar')
+        revs = f.get_revisions()
+        eq(len(revs), 1)
+        eq(revs[0].hashsum, hash)
+        eq(revs[0].mtime, 10)
 
     def test_file_move_within_watch(self):
         hash = self.write('foo/bar', 'bazinga')
@@ -201,8 +219,11 @@ class Test_Coba(object):
     def test_restore_file_in_place(self):
         self.watch('foo')
         hash = self.write('foo/bar', 'bazinga')
+        old_mtime = self.get_mtime('foo/bar')
         self.wait()
         self.write('foo/bar', 'buz')
+        new_mtime = self.get_mtime('foo/bar')
+        assert_not_almost_equal(old_mtime, new_mtime, delta=0.1)
         self.wait()
         f = self.file('foo/bar')
         revs = f.get_revisions()
@@ -210,12 +231,16 @@ class Test_Coba(object):
         eq(revs[0].hashsum, hash)
         revs[0].restore()
         eq(self.read('foo/bar'), 'bazinga')
+        assert_almost_equal(self.get_mtime('foo/bar'), old_mtime, delta=0.1)
 
     def test_restore_file_other_file(self):
         self.watch('foo')
         hash = self.write('foo/bar', 'bazinga')
+        old_mtime = self.get_mtime('foo/bar')
         self.wait()
         self.write('foo/bar', 'buz')
+        new_mtime = self.get_mtime('foo/bar')
+        assert_not_almost_equal(old_mtime, new_mtime, delta=0.1)
         self.wait()
         f = self.file('foo/bar')
         revs = f.get_revisions()
@@ -224,6 +249,8 @@ class Test_Coba(object):
         revs[0].restore(target=self.path('foo/baz'))
         eq(self.read('foo/baz'), 'bazinga')
         eq(self.read('foo/bar'), 'buz')
+        assert_almost_equal(self.get_mtime('foo/baz'), old_mtime, delta=0.1)
+        assert_almost_equal(self.get_mtime('foo/bar'), new_mtime, delta=0.1)
 
     def test_restore_file_other_dir(self):
         self.watch('foo')
@@ -239,6 +266,51 @@ class Test_Coba(object):
         revs[0].restore(target=path)
         eq(self.read('foz/bar'), 'bazinga')
         eq(self.read('foo/bar'), 'buz')
+
+    def test_restore_file_no_content(self):
+        self.watch('foo')
+        hash = self.write('foo/bar', 'bazinga')
+        old_mtime = self.get_mtime('foo/bar')
+        self.wait()
+        self.write('foo/bar', 'buz')
+        new_mtime = self.get_mtime('foo/bar')
+        assert_not_almost_equal(old_mtime, new_mtime, delta=0.1)
+        self.wait()
+        f = self.file('foo/bar')
+        revs = f.get_revisions()
+        eq(len(revs), 2)
+        eq(revs[0].hashsum, hash)
+        revs[0].restore(content=False)
+        eq(self.read('foo/bar'), 'buz')
+        assert_almost_equal(self.get_mtime('foo/bar'), old_mtime, delta=0.1)
+
+    def test_restore_file_no_mtime(self):
+        self.watch('foo')
+        hash = self.write('foo/bar', 'bazinga')
+        old_mtime = self.get_mtime('foo/bar')
+        self.wait()
+        self.write('foo/bar', 'buz')
+        new_mtime = self.get_mtime('foo/bar')
+        assert_not_almost_equal(old_mtime, new_mtime, delta=0.1)
+        self.wait()
+        f = self.file('foo/bar')
+        revs = f.get_revisions()
+        eq(len(revs), 2)
+        eq(revs[0].hashsum, hash)
+        revs[0].restore(mtime=False)
+        eq(self.read('foo/bar'), 'bazinga')
+        assert_not_almost_equal(self.get_mtime('foo/bar'), old_mtime, delta=0.1)
+
+    def test_restore_file_no_content_not_existing(self):
+        self.watch('foo')
+        hash = self.write('foo/bar', 'bazinga')
+        self.wait()
+        f = self.file('foo/bar')
+        revs = f.get_revisions()
+        eq(len(revs), 1)
+        eq(revs[0].hashsum, hash)
+        target = revs[0].restore(target=self.path('foo/baz'), content=False)
+        ok(not target.exists())
 
     def test_ignore_file(self):
         self.watch('foo', ignored=['**/*.bar'])
