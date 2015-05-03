@@ -27,9 +27,12 @@ Coba main module.
 
 import collections
 import datetime
+import grp
 import json
 import os
+import pwd
 import time
+import warnings
 
 import pathlib
 
@@ -76,10 +79,7 @@ class File(object):
         """
         JSON object hook.
         """
-        try:
-            return Revision(self, d['timestamp'], d['hashsum'], d['mtime'])
-        except KeyError:
-            return d
+        return Revision(self, **d)
 
     def get_revisions(self):
         """
@@ -122,8 +122,16 @@ class File(object):
             hashsum = self._coba._blob_store.put(f)
         try:
             stats = self.path.stat()
+            owner_name = pwd.getpwuid(stats.st_uid).pw_name
+            group_name = grp.getgrgid(stats.st_gid).gr_name
             revisions = self.get_revisions()
-            revision = Revision(self, time.time(), hashsum, stats.st_mtime)
+            if revisions:
+                id = max(rev.id for rev in revisions) + 1
+            else:
+                id = 1
+            revision = Revision(self, id, time.time(), hashsum, stats.st_mtime,
+                                stats.st_uid, owner_name, stats.st_gid,
+                                group_name, stats.st_mode)
             revisions.append(revision)
             self._set_revisions(revisions)
             return revision
@@ -174,6 +182,11 @@ class Revision(object):
         A :py:class:`File` instance describing the revision's source
         location on disk.
 
+    .. py:attribute:: id
+
+        The revision's ID. Two different revisions for the same file
+        must have different IDs.
+
     .. py:attribute:: timestamp
 
         Timestamp of the moment the revision was created.
@@ -185,21 +198,51 @@ class Revision(object):
     .. py:attribute:: mtime
 
         The file's modification time when the revision was created.
+
+    .. py:attribute:: owner_id
+
+        ID of the file's owner when the revision was created.
+
+    .. py:attribute:: owner_name
+
+        Name of the file's owner when the revision was created.
+
+    .. py:attribute:: group_id
+
+        ID of the file's group when the revision was created.
+
+    .. py:attribute:: group_name
+
+        Name of the file's group when the revision was created.
+
+    .. py:attribute:: permissions
+
+        Permission bits of the file when the revision was created. This
+        is an integer in the format used by :py:func:`os.chmod` and
+        :py:func:`os.stat`.
     """
 
-    def __init__(self, file, timestamp, hashsum, mtime):
+    def __init__(self, file, id, timestamp, hashsum, mtime, owner_id,
+                 owner_name, group_id, group_name, permissions):
         """
         Constructor.
 
         Do not instantiate this class directly. Use
         :py:meth:`File.get_revisions` instead.
         """
+        self.id = id
         self.file = file
         self.timestamp = timestamp
         self.hashsum = hashsum
         self.mtime = mtime
+        self.owner_id = owner_id
+        self.owner_name = owner_name
+        self.group_id = group_id
+        self.group_name = group_name
+        self.permissions = permissions
 
-    def restore(self, target=None, content=True, mtime=True,
+    def restore(self, target=None, content=True, mtime=True, owner=True,
+                group=True, permissions=True,
                 block_size=2**20):  # flake8: noqa
         """
         Restore the revision.
@@ -214,8 +257,20 @@ class Revision(object):
         that if ``content`` is false and ``target`` points to a
         non-existing file then the target file is not created at all.
 
-        If ``mtime`` is false then file's modification time is not
-        restored.
+        If ``mtime``  and ``permissions`` is false then file's
+        modification time and permission bits are not restored,
+        respectively.
+
+        Coba stores both the ID and name of a file's owner and group. By
+        default, it is checked whether the current system's name for the
+        given ID match the stored name, and the value is only set if
+        they do (``owner=True`` and ``group=True``). You can set
+        ``owner`` and ``group`` to ``"id"`` or ``"name"`` to only care
+        about the stored ID or name. In the case of ``"name"`` nothing
+        is done if there is no user/group in the current system with the
+        stored name. You can also set ``owner`` and ``group`` to
+        ``False`` to disable the restoration of the file's owner and
+        group.
 
         Returns the final target path to which the revision was
         restored.
@@ -225,19 +280,87 @@ class Revision(object):
             target = target.joinpath(self.file.path.name)
         target = normalize_path(target)
         if content:
-            with self.file._coba._blob_store.get_file(self.hashsum) as in_file:
-                with target.open('wb') as out_file:
-                    while True:
-                        block = in_file.read(block_size)
-                        if not block:
-                            break
-                        out_file.write(block)
+            self._restore_content()
         elif not target.exists():
             # No need to restore meta-data for a file that doesn't exist
             return target
         if mtime:
             os.utime(str(target), (self.mtime, self.mtime))
+        if owner:
+            self._restore_owner(target, owner)
+        if group:
+            self._restore_group(target, group)
+        if permissions:
+            target.chmod(self.permissions)
         return target
+
+    def _restore_content(self, target):
+        """
+        Restore the revision's content.
+
+        ``target`` is a :py:class:`pathlib.Path` instance.
+        """
+        with self.file._coba._blob_store.get_file(self.hashsum) as in_file:
+            with target.open('wb') as out_file:
+                while True:
+                    block = in_file.read(block_size)
+                    if not block:
+                        break
+                    out_file.write(block)
+
+    def _restore_owner(self, target, owner):
+        """
+        Restore the revision's owner.
+
+        ``target`` is a :py:class:`pathlib.Path` instance and ``owner``
+        is as for :py:meth:`Revision.restore`.
+        """
+        if owner is True:
+            uid = pwd.getpwnam(self.owner_name).pw_uid
+            if uid == self.owner_id:
+                os.chown(str(target), uid, -1)
+            else:
+                warnings.warn(('UID %d for stored owner name "%s" differs ' +
+                              'from stored UID %d, not restoring owner.') %
+                              (uid, self.owner_name, self.owner_id))
+        elif owner == "id":
+            os.chown(str(target), self.owner_id, -1)
+        elif owner == "name":
+            try:
+                uid = pwd.getpwnam(self.owner_name).pw_uid
+                os.chown(str(target), uid, -1)
+            except KeyError:
+                warnings.warn(('No user for stored owner name "%s" exists, ' +
+                              'not restoring owner.') % self.owner_name)
+        elif owner:
+            raise ValueError('Illegal value for input argument "owner".')
+
+    def _restore_group(self, target, group):
+        """
+        Restore the revision's group.
+
+        ``target`` is a :py:class:`pathlib.Path` instance and ``group``
+        is as for :py:meth:`Revision.restore`.
+        """
+        if group is True:
+            gid = grp.getgrnam(self.group_name).gr_gid
+            if gid == self.group_id:
+                os.chown(str(target), -1, gid)
+            else:
+                warnings.warn(('GID %d for stored group name "%s" differs ' +
+                              'from stored GID %d, not restoring group.') %
+                              (gid, self.group_name, self.group_id))
+        elif group == "id":
+            os.chown(str(target), -1, self.group_id)
+        elif group == "name":
+            try:
+                gid = grp.getgrnam(self.group_name).gr_gid
+                os.chown(str(target), -1, gid)
+            except KeyError:
+                warnings.warn(('No group for stored group name "%s" exists, ' +
+                              'not restoring group.') % self.group_name)
+        elif group:
+            raise ValueError('Illegal value for input argument "group".')
 
     def __repr__(self):
         p = str(self.file.path)
