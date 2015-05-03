@@ -28,6 +28,7 @@ Coba main module.
 import collections
 import datetime
 import json
+import os
 import time
 
 import pathlib
@@ -48,7 +49,7 @@ class _JSONEncoder(json.JSONEncoder):
     """
     def default(self, obj):
         if isinstance(obj, Revision):
-            return {'timestamp': obj.timestamp, 'hashsum': obj.hashsum}
+            return obj._to_json()
         return super(_JSONEncoder, self).default(obj)
 
 
@@ -76,7 +77,8 @@ class File(object):
         JSON object hook.
         """
         try:
-            return Revision(self, d['timestamp'], d['hashsum'])
+            return Revision(self, d['timestamp'], d['hashsum'], d['atime'],
+                            d['mtime'])
         except KeyError:
             return d
 
@@ -116,15 +118,20 @@ class File(object):
         corresponding revision is returned as an instance of
         :py:class:`Revision`.
         """
+
         with self.path.open('rb') as f:
             hashsum = self._coba._blob_store.put(f)
         try:
+            stats = self.path.stat()
             revisions = self.get_revisions()
-            revision = Revision(self, time.time(), hashsum)
+            revision = Revision(self, time.time(), hashsum, stats.st_atime,
+                                stats.st_mtime)
             revisions.append(revision)
             self._set_revisions(revisions)
             return revision
         except:
+            # FIXME: We must not do this, since the same content could
+            # be referred to by a different revision.
             self._coba._blob_store.remove(hashsum)
             raise
 
@@ -163,9 +170,30 @@ class File(object):
 class Revision(object):
     """
     A revision of a file.
+
+    .. py:attribute:: file
+
+        A :py:class:`File` instance describing the revision's source
+        location on disk.
+
+    .. py:attribute:: timestamp
+
+        Timestamp of the moment the revision was created.
+
+    .. py:attribute:: hashsum
+
+        Hashsum of the file's content when the revision was created.
+
+    .. py:attribute:: atime
+
+        The file's access time when the revision was created.
+
+    .. py:attribute:: mtime
+
+        The file's modification time when the revision was created.
     """
 
-    def __init__(self, file, timestamp, hashsum):
+    def __init__(self, file, timestamp, hashsum, atime, mtime):
         """
         Constructor.
 
@@ -175,8 +203,11 @@ class Revision(object):
         self.file = file
         self.timestamp = timestamp
         self.hashsum = hashsum
+        self.atime = atime
+        self.mtime = mtime
 
-    def restore(self, target=None, block_size=2**20):  # flake8: noqa
+    def restore(self, target=None, content=True, times=True,
+                block_size=2**20):  # flake8: noqa
         """
         Restore the revision.
 
@@ -186,25 +217,46 @@ class Revision(object):
         a string or a ``pathlib.Path`` instance. If ``target`` is an
         (existing) directory then the file's basename is appended to it.
 
-        Returns the final target path to which the revision was restored.
+        If ``content`` is false then file content is not restored. Note
+        that if ``content`` is false and ``target`` points to a
+        non-existing file then the target file is not created at all.
+
+        If ``times`` is false then file access and modification times
+        are not restored.
+
+        Returns the final target path to which the revision was
+        restored.
         """
         target = pathlib.Path(target or self.file.path)
         if target.is_dir():
             target = target.joinpath(self.file.path.name)
         target = normalize_path(target)
-        with self.file._coba._blob_store.get_file(self.hashsum) as in_file:
-            with target.open('wb') as out_file:
-                while True:
-                    block = in_file.read(block_size)
-                    if not block:
-                        break
-                    out_file.write(block)
+        if content:
+            with self.file._coba._blob_store.get_file(self.hashsum) as in_file:
+                with target.open('wb') as out_file:
+                    while True:
+                        block = in_file.read(block_size)
+                        if not block:
+                            break
+                        out_file.write(block)
+        elif not target.exists():
+            # No need to restore meta-data for a file that doesn't exist
+            return target
+        if times:
+            os.utime(str(target), (self.atime, self.mtime))
         return target
 
     def __repr__(self):
         p = str(self.file.path)
         d = datetime.datetime.fromtimestamp(self.timestamp).isoformat(' ')
         return "%s(%r, '%s')" % (self.__class__.__name__, p, d)
+
+    def _to_json(self):
+        """
+        Returns a JSON-serializable view of the revision.
+        """
+        return {k: v for k, v in self.__dict__.iteritems() if not
+                k.startswith('_') and k != 'file'}
 
 
 class Coba(object):
