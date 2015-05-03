@@ -77,8 +77,7 @@ class File(object):
         JSON object hook.
         """
         try:
-            return Revision(self, d['timestamp'], d['hashsum'], d['atime'],
-                            d['mtime'])
+            return Revision(self, d['timestamp'], d['hashsum'], d['mtime'])
         except KeyError:
             return d
 
@@ -124,8 +123,7 @@ class File(object):
         try:
             stats = self.path.stat()
             revisions = self.get_revisions()
-            revision = Revision(self, time.time(), hashsum, stats.st_atime,
-                                stats.st_mtime)
+            revision = Revision(self, time.time(), hashsum, stats.st_mtime)
             revisions.append(revision)
             self._set_revisions(revisions)
             return revision
@@ -184,16 +182,12 @@ class Revision(object):
 
         Hashsum of the file's content when the revision was created.
 
-    .. py:attribute:: atime
-
-        The file's access time when the revision was created.
-
     .. py:attribute:: mtime
 
         The file's modification time when the revision was created.
     """
 
-    def __init__(self, file, timestamp, hashsum, atime, mtime):
+    def __init__(self, file, timestamp, hashsum, mtime):
         """
         Constructor.
 
@@ -203,10 +197,9 @@ class Revision(object):
         self.file = file
         self.timestamp = timestamp
         self.hashsum = hashsum
-        self.atime = atime
         self.mtime = mtime
 
-    def restore(self, target=None, content=True, times=True,
+    def restore(self, target=None, content=True, mtime=True,
                 block_size=2**20):  # flake8: noqa
         """
         Restore the revision.
@@ -221,8 +214,8 @@ class Revision(object):
         that if ``content`` is false and ``target`` points to a
         non-existing file then the target file is not created at all.
 
-        If ``times`` is false then file access and modification times
-        are not restored.
+        If ``mtime`` is false then file's modification time is not
+        restored.
 
         Returns the final target path to which the revision was
         restored.
@@ -242,8 +235,8 @@ class Revision(object):
         elif not target.exists():
             # No need to restore meta-data for a file that doesn't exist
             return target
-        if times:
-            os.utime(str(target), (self.atime, self.mtime))
+        if mtime:
+            os.utime(str(target), (self.mtime, self.mtime))
         return target
 
     def __repr__(self):
