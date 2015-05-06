@@ -423,3 +423,21 @@ class TestCoba(BaseTest):
         eq(len(revs), 1)
         eq(revs[0].hashsum, hash)
 
+    def test_backup_file_size(self):
+        """
+        Backups store file size.
+        """
+        self.watch()
+        f = 'foo/bar'
+        self.write(f, '1')
+        self.backup(f)
+        self.write(f, '12')
+        self.backup(f)
+        self.write(f, '123')
+        self.backup(f)
+        revs = self.revs(f)
+        eq(len(revs), 3)
+        eq(revs[0].size, 1)
+        eq(revs[1].size, 2)
+        eq(revs[2].size, 3)
+

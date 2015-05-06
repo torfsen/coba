@@ -132,7 +132,8 @@ class File(object):
                 id = 1
             revision = Revision(self, id, time.time(), hashsum, stats.st_mtime,
                                 stats.st_uid, owner_name, stats.st_gid,
-                                group_name, stat.S_IMODE(stats.st_mode))
+                                group_name, stat.S_IMODE(stats.st_mode),
+                                stats.st_size)
             revisions.append(revision)
             self._set_revisions(revisions)
             return revision
@@ -221,10 +222,14 @@ class Revision(object):
         Permission bits of the file when the revision was created. This
         is an integer in the format used by :py:func:`os.chmod` and
         :py:func:`os.stat`.
+
+    .. py:attribute:: size
+
+        The file's size in bytes when the revision was created.
     """
 
     def __init__(self, file, id, timestamp, hashsum, mtime, owner_id,
-                 owner_name, group_id, group_name, mode):
+                 owner_name, group_id, group_name, mode, size):
         """
         Constructor.
 
@@ -241,6 +246,7 @@ class Revision(object):
         self.group_id = group_id
         self.group_name = group_name
         self.mode = mode
+        self.size = size
 
     def restore(self, target=None, content=True, mtime=True, owner=True,
                 group=True, mode=True, block_size=2**20):  # flake8: noqa
