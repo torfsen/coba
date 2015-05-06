@@ -36,6 +36,8 @@ import functools
 import logging
 import sys
 import traceback
+import warnings
+import sys
 
 import click
 
@@ -78,6 +80,13 @@ def _handle_errors(f):
     return wrapper
 
 
+def _showwarning(message, *args, **kwargs):
+    """
+    Custom version of `warnings.showwarning``.
+    """
+    sys.stderr.write('Warning: %s\n' % message)
+
+
 def _init_logging(level):
     """
     Initialize logging.
@@ -94,6 +103,10 @@ def _init_logging(level):
     stderr_handler.setLevel(logging.WARNING)
     log.addHandler(stderr_handler)
     log.setLevel(level)
+    logging.captureWarnings(True)
+    warnings.showwarning = _showwarning
+    warnings_logger = logging.getLogger('py.warnings')
+    warnings_logger.addHandler(stderr_handler)
 
 
 def _format_revision(rev):
