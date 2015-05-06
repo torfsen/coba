@@ -31,6 +31,7 @@ import grp
 import json
 import os
 import pwd
+import stat
 import time
 import warnings
 
@@ -131,7 +132,7 @@ class File(object):
                 id = 1
             revision = Revision(self, id, time.time(), hashsum, stats.st_mtime,
                                 stats.st_uid, owner_name, stats.st_gid,
-                                group_name, stats.st_mode)
+                                group_name, stat.S_IMODE(stats.st_mode))
             revisions.append(revision)
             self._set_revisions(revisions)
             return revision
@@ -215,7 +216,7 @@ class Revision(object):
 
         Name of the file's group when the revision was created.
 
-    .. py:attribute:: permissions
+    .. py:attribute:: mode
 
         Permission bits of the file when the revision was created. This
         is an integer in the format used by :py:func:`os.chmod` and
@@ -223,7 +224,7 @@ class Revision(object):
     """
 
     def __init__(self, file, id, timestamp, hashsum, mtime, owner_id,
-                 owner_name, group_id, group_name, permissions):
+                 owner_name, group_id, group_name, mode):
         """
         Constructor.
 
@@ -239,11 +240,10 @@ class Revision(object):
         self.owner_name = owner_name
         self.group_id = group_id
         self.group_name = group_name
-        self.permissions = permissions
+        self.mode = mode
 
     def restore(self, target=None, content=True, mtime=True, owner=True,
-                group=True, permissions=True,
-                block_size=2**20):  # flake8: noqa
+                group=True, mode=True, block_size=2**20):  # flake8: noqa
         """
         Restore the revision.
 
@@ -257,9 +257,8 @@ class Revision(object):
         that if ``content`` is false and ``target`` points to a
         non-existing file then the target file is not created at all.
 
-        If ``mtime``  and ``permissions`` is false then file's
-        modification time and permission bits are not restored,
-        respectively.
+        If ``mtime``  and ``mode`` is false then file's modification
+        time and permission bits are not restored, respectively.
 
         Coba stores both the ID and name of a file's owner and group. By
         default, it is checked whether the current system's name for the
@@ -280,7 +279,7 @@ class Revision(object):
             target = target.joinpath(self.file.path.name)
         target = normalize_path(target)
         if content:
-            self._restore_content()
+            self._restore_content(target, block_size)
         elif not target.exists():
             # No need to restore meta-data for a file that doesn't exist
             return target
@@ -290,11 +289,11 @@ class Revision(object):
             self._restore_owner(target, owner)
         if group:
             self._restore_group(target, group)
-        if permissions:
-            target.chmod(self.permissions)
+        if mode:
+            target.chmod(self.mode)
         return target
 
-    def _restore_content(self, target):
+    def _restore_content(self, target, block_size):
         """
         Restore the revision's content.
 

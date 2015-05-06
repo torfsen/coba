@@ -33,13 +33,15 @@ import contextlib
 import os
 import os.path
 import shutil
+import stat
 import tempfile
 import time
 
 from nose.tools import eq_ as eq, ok_ as ok
 from watchdog.observers import Observer
 from watchdog.events import (FileSystemEventHandler, FileCreatedEvent,
-                             FileDeletedEvent, FileMovedEvent)
+                             FileDeletedEvent, FileModifiedEvent,
+                             FileMovedEvent)
 
 
 class RecordingEventHandler(FileSystemEventHandler):
@@ -174,3 +176,25 @@ def test_that_directory_movement_between_watches_creates_creation_events():
                 bar_created = True
     ok(foo_created, 'No creation event for empty files')
     ok(bar_created, 'No creation event for non-empty files')
+
+
+def test_that_mode_change_creates_modification_events():
+    handler = RecordingEventHandler()
+    with temp_dir() as base_dir:
+        foo_path = os.path.join(base_dir, 'foo')
+        create_file(foo_path)
+        os.chmod(foo_path, stat.S_IRUSR)
+        with watched_dir(base_dir, handler):
+            os.chmod(foo_path, stat.S_IRUSR | stat.S_IWUSR)
+
+    foo_modified = False
+    for event in handler.events:
+        if isinstance(event, FileModifiedEvent):
+            if event.src_path == foo_path:
+                foo_modified = True
+    ok(foo_modified, 'No modification event for mode change')
+
+
+# Some tests for watchdog which require root privileges can be found in
+# ``test/test_sudo.py``.
+

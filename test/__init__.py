@@ -1,7 +1,7 @@
-#!venv/bin/python
+#!/usr/bin/python
 # vim: set fileencoding=utf-8 :
 
-# Copyright (c) 2015 Florian Brucker
+# Copyright (c) 2015 Florian Brucker (mail@florianbrucker.de).
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -22,16 +22,6 @@
 # THE SOFTWARE.
 
 """
-Test runner for coba tests.
+Empty module to create package.
 """
-
-import sys
-
-import nose
-
-argv = sys.argv[:]
-argv.insert(1, '--nocapture')  # The daemon package doesn't like nose
-                               # capturing STDOUT.
-
-nose.main(argv=argv)
 

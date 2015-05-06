@@ -1,7 +1,6 @@
-#!venv/bin/python
-# vim: set fileencoding=utf-8 :
+#!/bin/bash
 
-# Copyright (c) 2015 Florian Brucker
+# Copyright (c) 2015 Florian Brucker (mail@florianbrucker.de).
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -21,17 +20,26 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-"""
-Test runner for coba tests.
-"""
+# Script to create Coba-specific users and groups for testing purposes. See
+# also ``remove_test_users.sh`` for removing them again. The users have no home
+# directories and cannot login.
 
-import sys
-
-import nose
-
-argv = sys.argv[:]
-argv.insert(1, '--nocapture')  # The daemon package doesn't like nose
-                               # capturing STDOUT.
-
-nose.main(argv=argv)
+read -p "Really create test users and groups (y/n)? " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]
+then
+    sudo useradd --comment "Test user A for the Coba backup system" \
+                 --shell /sbin/nologin \
+                 --user-group \
+                 coba_test_a
+    sudo useradd --comment "Test user B for the Coba backup system" \
+                 --shell /sbin/nologin \
+                 --user-group \
+                 coba_test_b
+    sudo usermod -a -G coba_test_b coba_test_a
+    sudo usermod -a -G coba_test_a coba_test_b
+    echo Created test users and groups.
+else
+    echo Not creating test users and groups.
+fi
 

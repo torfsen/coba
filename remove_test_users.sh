@@ -1,7 +1,6 @@
-#!venv/bin/python
-# vim: set fileencoding=utf-8 :
+#!/bin/bash
 
-# Copyright (c) 2015 Florian Brucker
+# Copyright (c) 2015 Florian Brucker (mail@florianbrucker.de).
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -21,17 +20,21 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-"""
-Test runner for coba tests.
-"""
+# Script to remove Coba-specific users and groups that were created using
+# ``create_test_users.sh``.
 
-import sys
-
-import nose
-
-argv = sys.argv[:]
-argv.insert(1, '--nocapture')  # The daemon package doesn't like nose
-                               # capturing STDOUT.
-
-nose.main(argv=argv)
+read -p "Really remove test users and groups (y/n)? " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]
+then
+    sudo deluser --quiet coba_test_a coba_test_b
+    sudo deluser --quiet coba_test_b coba_test_a
+    sudo deluser --quiet coba_test_a
+    sudo deluser --quiet coba_test_b
+    sudo delgroup --quiet coba_test_a
+    sudo delgroup --quiet coba_test_b
+    echo Removed test users and groups.
+else
+    echo Not removing test users and groups.
+fi
 
