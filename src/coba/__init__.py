@@ -320,23 +320,25 @@ class Revision(object):
         ``target`` is a :py:class:`pathlib.Path` instance and ``owner``
         is as for :py:meth:`Revision.restore`.
         """
+        if owner is True or owner == "name":
+            try:
+                uid = pwd.getpwnam(self.owner_name).pw_uid
+            except KeyError:
+                warnings.warn(('No user for stored owner name "%s" exists, ' +
+                              'not restoring owner.') % self.owner_name)
+                return
         if owner is True:
-            uid = pwd.getpwnam(self.owner_name).pw_uid
             if uid == self.owner_id:
                 os.chown(str(target), uid, -1)
             else:
                 warnings.warn(('UID %d for stored owner name "%s" differs ' +
                               'from stored UID %d, not restoring owner.') %
                               (uid, self.owner_name, self.owner_id))
+                return
         elif owner == "id":
             os.chown(str(target), self.owner_id, -1)
         elif owner == "name":
-            try:
-                uid = pwd.getpwnam(self.owner_name).pw_uid
-                os.chown(str(target), uid, -1)
-            except KeyError:
-                warnings.warn(('No user for stored owner name "%s" exists, ' +
-                              'not restoring owner.') % self.owner_name)
+            os.chown(str(target), uid, -1)
         elif owner:
             raise ValueError('Illegal value for input argument "owner".')
 
@@ -347,23 +349,25 @@ class Revision(object):
         ``target`` is a :py:class:`pathlib.Path` instance and ``group``
         is as for :py:meth:`Revision.restore`.
         """
+        if group is True or group == "name":
+            try:
+                gid = grp.getgrnam(self.group_name).gr_gid
+            except KeyError:
+                warnings.warn(('No group for stored group name "%s" exists, ' +
+                              'not restoring group.') % self.group_name)
+                return
         if group is True:
-            gid = grp.getgrnam(self.group_name).gr_gid
             if gid == self.group_id:
                 os.chown(str(target), -1, gid)
             else:
                 warnings.warn(('GID %d for stored group name "%s" differs ' +
                               'from stored GID %d, not restoring group.') %
                               (gid, self.group_name, self.group_id))
+                return
         elif group == "id":
             os.chown(str(target), -1, self.group_id)
         elif group == "name":
-            try:
-                gid = grp.getgrnam(self.group_name).gr_gid
-                os.chown(str(target), -1, gid)
-            except KeyError:
-                warnings.warn(('No group for stored group name "%s" exists, ' +
-                              'not restoring group.') % self.group_name)
+            os.chown(str(target), -1, gid)
         elif group:
             raise ValueError('Illegal value for input argument "group".')
 
