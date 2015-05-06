@@ -14,5 +14,6 @@ For more information please refer to the
 
 License
 -------
-Coba is distributed under the MIT license. See the file `LICENSE` for details.
+Coba itself is distributed under the MIT license. Coba also contains code
+distributed under the PSF license. See the file `LICENSE` for details.
 

@@ -20,6 +20,11 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
+#
+# This module contains code taken from Python 3.4, Copyright © 2001-2015 Python
+# Software Foundation; All Rights Reserved. That code is licensed under the PSF
+# License, see https://docs.python.org/3/license.html for details.
+
 
 """
 Various utilities.
@@ -29,6 +34,7 @@ import errno
 import os
 import os.path
 import re
+import stat
 
 import pathlib
 
@@ -36,6 +42,7 @@ import pathlib
 __all__ = [
     'binary_file_iterator',
     'expand_path',
+    'filemode',
     'is_in_dir',
     'make_dirs',
     'match_path',
@@ -177,4 +184,52 @@ def expand_path(path):
     :py:func:`os.path.expandvars`.
     """
     return os.path.expandvars(os.path.expanduser(path))
+
+
+# The following code is taken from ``stat.py`` of Python 3.4, Copyright
+# © 2001-2015 Python Software Foundation; All Rights Reserved. The code
+# is licensed under the PSF license, https://docs.python.org/3/license.html.
+
+_filemode_table = (
+    ((stat.S_IFLNK,              "l"),
+     (stat.S_IFREG,              "-"),
+     (stat.S_IFBLK,              "b"),
+     (stat.S_IFDIR,              "d"),
+     (stat.S_IFCHR,              "c"),
+     (stat.S_IFIFO,              "p")),
+
+    ((stat.S_IRUSR,              "r"),),
+    ((stat.S_IWUSR,              "w"),),
+    ((stat.S_IXUSR|stat.S_ISUID, "s"),
+     (stat.S_ISUID,              "S"),
+     (stat.S_IXUSR,              "x")),
+
+    ((stat.S_IRGRP,              "r"),),
+    ((stat.S_IWGRP,              "w"),),
+    ((stat.S_IXGRP|stat.S_ISGID, "s"),
+     (stat.S_ISGID,              "S"),
+     (stat.S_IXGRP,              "x")),
+
+    ((stat.S_IROTH,              "r"),),
+    ((stat.S_IWOTH,              "w"),),
+    ((stat.S_IXOTH|stat.S_ISVTX, "t"),
+     (stat.S_ISVTX,              "T"),
+     (stat.S_IXOTH,              "x"))
+)
+
+def filemode(mode):
+    """
+    Convert a file's mode to a string of the form '-rwxrwxrwx'.
+    """
+    perm = []
+    for table in _filemode_table:
+        for bit, char in table:
+            if mode & bit == bit:
+                perm.append(char)
+                break
+        else:
+            perm.append("-")
+    return "".join(perm)
+
+# End of the code taken from ``stat.py`` of Python 3.4.
 

@@ -17,4 +17,5 @@ because your backups are too old.
     configuration
     usage
     development
+    license
 

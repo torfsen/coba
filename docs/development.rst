@@ -7,12 +7,6 @@ The source code for Coba can be found `on GitHub
 <https://github.com/torfuspolymorphus/coba>`_.
 
 
-License
-=======
-Coba is available under the `MIT license
-<http://opensource.org/licenses/MIT>`_.
-
-
 Tests
 =====
 Use the ``runtests.py`` script to execute the tests. Please make sure to
