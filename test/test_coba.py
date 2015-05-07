@@ -160,16 +160,18 @@ class BaseTest(object):
     def get_group(self, path):
         return os.stat(self.path(path)).st_gid
 
-    def get_owner(self, path):
+    def get_user(self, path):
         return os.stat(self.path(path)).st_uid
 
     def check_restore(self, target=None, compare_path=None, content=True,
-                      mtime=True, mode=True, owner=True, group=True,
-                      old_owner=None, new_owner=None, old_group=None,
-                      new_group=None):
+                      mtime=True, mode=True, user=True, group=True,
+                      old_user=None, new_user=None, exp_user=None,
+                      old_group=None, new_group=None, exp_group=None,
+                      rev_attrs=None):
         """
         A general helper for testing the restoration of files.
         """
+        rev_attrs = rev_attrs or {}
         f = 'foo/bar'
         if not compare_path:
             compare_path = target or f
@@ -185,10 +187,10 @@ class BaseTest(object):
             self.chown(f, -1, old_group)
         else:
             old_group = self.get_group(f)
-        if old_owner:
-            self.chown(f, old_owner, -1)
+        if old_user:
+            self.chown(f, old_user, -1)
         else:
-            old_owner = self.get_owner(f)
+            old_user = self.get_user(f)
         self.backup(f)
         new_mode = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP
         self.set_mode(f, new_mode)
@@ -199,26 +201,31 @@ class BaseTest(object):
             self.chown(f, -1, new_group)
         else:
             new_group = old_group
-        if new_owner:
-            self.chown(f, new_owner, -1)
+        if new_user:
+            self.chown(f, new_user, -1)
         else:
-            new_owner = old_owner
+            new_user = old_user
         revs = self.revs(f)
         eq(len(revs), 1)
-        revs[0].restore(target=target, content=content, mtime=mtime,
-                        mode=mode, owner=owner, group=group)
+        rev = revs[0]
+        for attr, value in rev_attrs.iteritems():
+            setattr(rev, attr, value)
+        rev.restore(target=target, content=content, mtime=mtime, mode=mode,
+                    user=user, group=group)
         eq(self.read(compare_path), old_content if content else new_content)
         assert_almost_equal(self.get_mtime(compare_path), old_mtime if mtime
                             else new_mtime, delta=0.1)
         eq(self.get_mode(compare_path), old_mode if mode else new_mode)
-        eq(self.get_group(compare_path), old_group if group else new_group)
-        eq(self.get_owner(compare_path), old_owner if owner else new_owner)
+        exp_group = exp_group or (old_group if group else new_group)
+        eq(self.get_group(compare_path), exp_group)
+        exp_user = exp_user or (old_user if user else new_user)
+        eq(self.get_user(compare_path), exp_user)
         if compare_path != f:
             eq(self.read(f), new_content)
             assert_almost_equal(self.get_mtime(f), new_mtime)
             eq(self.get_mode(f), new_mode)
             eq(self.get_group(f), new_group)
-            eq(self.get_owner(f), new_owner)
+            eq(self.get_user(f), new_user)
 
 
 class TestCoba(BaseTest):

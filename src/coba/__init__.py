@@ -33,7 +33,6 @@ import os
 import pwd
 import stat
 import time
-import warnings
 
 import pathlib
 
@@ -41,6 +40,8 @@ from .config import Configuration
 from .stores import BlobStore, local_storage_driver, PathStore
 from .utils import make_dirs, normalize_path
 from .watch import Service
+from .warnings import (GroupMismatchWarning, NoSuchGroupWarning,
+                       NoSuchUserWarning, UserMismatchWarning, warn)
 
 __version__ = '0.1.0'
 
@@ -123,7 +124,7 @@ class File(object):
             hashsum = self._coba._blob_store.put(f)
         try:
             stats = self.path.stat()
-            owner_name = pwd.getpwuid(stats.st_uid).pw_name
+            user_name = pwd.getpwuid(stats.st_uid).pw_name
             group_name = grp.getgrgid(stats.st_gid).gr_name
             revisions = self.get_revisions()
             if revisions:
@@ -131,7 +132,7 @@ class File(object):
             else:
                 id = 1
             revision = Revision(self, id, time.time(), hashsum, stats.st_mtime,
-                                stats.st_uid, owner_name, stats.st_gid,
+                                stats.st_uid, user_name, stats.st_gid,
                                 group_name, stat.S_IMODE(stats.st_mode),
                                 stats.st_size)
             revisions.append(revision)
@@ -201,13 +202,13 @@ class Revision(object):
 
         The file's modification time when the revision was created.
 
-    .. py:attribute:: owner_id
+    .. py:attribute:: user_id
 
-        ID of the file's owner when the revision was created.
+        ID of the user owning the file when the revision was created.
 
-    .. py:attribute:: owner_name
+    .. py:attribute:: user_name
 
-        Name of the file's owner when the revision was created.
+        Name of the user owning the file when the revision was created.
 
     .. py:attribute:: group_id
 
@@ -228,8 +229,8 @@ class Revision(object):
         The file's size in bytes when the revision was created.
     """
 
-    def __init__(self, file, id, timestamp, hashsum, mtime, owner_id,
-                 owner_name, group_id, group_name, mode, size):
+    def __init__(self, file, id, timestamp, hashsum, mtime, user_id,
+                 user_name, group_id, group_name, mode, size):
         """
         Constructor.
 
@@ -241,14 +242,14 @@ class Revision(object):
         self.timestamp = timestamp
         self.hashsum = hashsum
         self.mtime = mtime
-        self.owner_id = owner_id
-        self.owner_name = owner_name
+        self.user_id = user_id
+        self.user_name = user_name
         self.group_id = group_id
         self.group_name = group_name
         self.mode = mode
         self.size = size
 
-    def restore(self, target=None, content=True, mtime=True, owner=True,
+    def restore(self, target=None, content=True, mtime=True, user=True,
                 group=True, mode=True, block_size=2**20):  # flake8: noqa
         """
         Restore the revision.
@@ -266,16 +267,22 @@ class Revision(object):
         If ``mtime``  and ``mode`` is false then file's modification
         time and permission bits are not restored, respectively.
 
-        Coba stores both the ID and name of a file's owner and group. By
-        default, it is checked whether the current system's name for the
-        given ID match the stored name, and the value is only set if
-        they do (``owner=True`` and ``group=True``). You can set
-        ``owner`` and ``group`` to ``"id"`` or ``"name"`` to only care
-        about the stored ID or name. In the case of ``"name"`` nothing
-        is done if there is no user/group in the current system with the
-        stored name. You can also set ``owner`` and ``group`` to
-        ``False`` to disable the restoration of the file's owner and
-        group.
+        Coba stores both the ID and name of a file's user and group. By
+        default (``user=True`` and ``group=True``) it is checked whether
+        the current system's name for the given ID matches the stored
+        name, and the value is only set if they do. Otherwise a
+        :py:class:`coba.warnings.GroupMismatchWarning` or a
+        :py:class:`coba.warnings.UserMismatchWarning` is issued. You can
+        set ``user`` and ``group`` to ``"id"`` or ``"name"`` to only
+        care about the stored ID or name. In the case of ``"name"`` a
+        :py:class:`coba.warnings.NoSuchUserWarning` or
+        :py:class:`coba.warnings.NoSuchGroupWarning` is issued if there
+        is no user/group in the current system with the stored name and
+        the file's user is not changed. In the case of ``"id"`` the
+        user/group is set to that ID even if there's currently no
+        registered user/group for it. You can also set ``user`` and
+        ``group`` to ``False`` to disable the restoration of the file's
+        user and group.
 
         Returns the final target path to which the revision was
         restored.
@@ -291,8 +298,8 @@ class Revision(object):
             return target
         if mtime:
             os.utime(str(target), (self.mtime, self.mtime))
-        if owner:
-            self._restore_owner(target, owner)
+        if user:
+            self._restore_user(target, user)
         if group:
             self._restore_group(target, group)
         if mode:
@@ -313,34 +320,35 @@ class Revision(object):
                         break
                     out_file.write(block)
 
-    def _restore_owner(self, target, owner):
+    def _restore_user(self, target, user):
         """
-        Restore the revision's owner.
+        Restore the revision's user.
 
-        ``target`` is a :py:class:`pathlib.Path` instance and ``owner``
+        ``target`` is a :py:class:`pathlib.Path` instance and ``user``
         is as for :py:meth:`Revision.restore`.
         """
-        if owner is True or owner == "name":
+        if user is True or user == "name":
             try:
-                uid = pwd.getpwnam(self.owner_name).pw_uid
+                uid = pwd.getpwnam(self.user_name).pw_uid
             except KeyError:
-                warnings.warn(('No user for stored owner name "%s" exists, ' +
-                              'not restoring owner.') % self.owner_name)
+                warn(('No user for stored user name "%s" exists, ' +
+                     'not restoring user.') % self.user_name,
+                     NoSuchUserWarning)
                 return
-        if owner is True:
-            if uid == self.owner_id:
+        if user is True:
+            if uid == self.user_id:
                 os.chown(str(target), uid, -1)
             else:
-                warnings.warn(('UID %d for stored owner name "%s" differs ' +
-                              'from stored UID %d, not restoring owner.') %
-                              (uid, self.owner_name, self.owner_id))
+                warn(('UID %d for stored user name "%s" differs from ' +
+                     'stored UID %d, not restoring user.') % (uid,
+                     self.user_name, self.user_id), UserMismatchWarning)
                 return
-        elif owner == "id":
-            os.chown(str(target), self.owner_id, -1)
-        elif owner == "name":
+        elif user == "id":
+            os.chown(str(target), self.user_id, -1)
+        elif user == "name":
             os.chown(str(target), uid, -1)
-        elif owner:
-            raise ValueError('Illegal value for input argument "owner".')
+        elif user:
+            raise ValueError('Illegal value for input argument "user".')
 
     def _restore_group(self, target, group):
         """
@@ -353,16 +361,17 @@ class Revision(object):
             try:
                 gid = grp.getgrnam(self.group_name).gr_gid
             except KeyError:
-                warnings.warn(('No group for stored group name "%s" exists, ' +
-                              'not restoring group.') % self.group_name)
+                warn(('No group for stored group name "%s" exists, ' +
+                     'not restoring group.') % self.group_name,
+                     NoSuchGroupWarning)
                 return
         if group is True:
             if gid == self.group_id:
                 os.chown(str(target), -1, gid)
             else:
-                warnings.warn(('GID %d for stored group name "%s" differs ' +
-                              'from stored GID %d, not restoring group.') %
-                              (gid, self.group_name, self.group_id))
+                warn(('GID %d for stored group name "%s" differs from ' +
+                     'stored GID %d, not restoring group.') % (gid,
+                     self.group_name, self.group_id), GroupMismatchWarning)
                 return
         elif group == "id":
             os.chown(str(target), -1, self.group_id)

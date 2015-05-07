@@ -46,5 +46,6 @@ API Reference
     coba_config
     coba_stores
     coba_utils
+    coba_warnings
     coba_watch
 
