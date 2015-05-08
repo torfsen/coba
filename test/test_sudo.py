@@ -90,6 +90,8 @@ class TestCobaSudo(BaseTest):
         """
         Backup due to change of user.
         """
+        if not user_a:
+            raise SkipTest()
         self.write('foo/bar', 'bazinga')
         self.chown('foo/bar', user_a, group_a)
         self.watch('foo')
@@ -106,6 +108,8 @@ class TestCobaSudo(BaseTest):
         """
         Back up due to change of group.
         """
+        if not user_a:
+            raise SkipTest()
         self.write('foo/bar', 'bazinga')
         self.chown('foo/bar', user_a, group_a)
         self.watch('foo')
@@ -122,18 +126,24 @@ class TestCobaSudo(BaseTest):
         """
         Restore a file to a different user.
         """
+        if not user_a:
+            raise SkipTest()
         self.check_restore(old_user=user_a, new_user=user_b)
 
     def test_restore_file_other_group(self):
         """
         Restore a file to a different group.
         """
+        if not user_a:
+            raise SkipTest()
         self.check_restore(old_group=group_a, new_group=group_b)
 
     def test_restore_file_no_user(self):
         """
         Restore a file without restoring its user.
         """
+        if not user_a:
+            raise SkipTest()
         self.check_restore(old_user=user_a, new_user=user_b,
                            old_group=group_a, new_group=group_b,
                            user=False)
@@ -142,6 +152,8 @@ class TestCobaSudo(BaseTest):
         """
         Restore a file without restoring its group.
         """
+        if not user_a:
+            raise SkipTest()
         self.check_restore(old_group=group_a, new_group=group_b,
                            old_user=user_a, new_user=user_b,
                            group=False)
@@ -151,6 +163,8 @@ class TestCobaSudo(BaseTest):
         """
         Restore a file with a mismatch between group ID and name.
         """
+        if not user_a:
+            raise SkipTest()
         self.check_restore(old_group=group_a, new_group=group_b,
                            exp_group=group_b, rev_attrs={'group_name':
                            'coba_test_b'})
@@ -160,6 +174,8 @@ class TestCobaSudo(BaseTest):
         """
         Restore a file with a non-existing group name.
         """
+        if not user_a:
+            raise SkipTest()
         self.check_restore(old_group=group_a, new_group=group_b,
                            exp_group=group_b, rev_attrs={'group_name':
                            'coba_test_c'}, group='name')
@@ -180,6 +196,8 @@ class TestCobaSudo(BaseTest):
         """
         Restore a file with a mismatch between user ID and name.
         """
+        if not user_a:
+            raise SkipTest()
         self.check_restore(old_user=user_a, new_user=user_b,
                            exp_user=user_b, rev_attrs={'user_name':
                            'coba_test_b'})
@@ -189,6 +207,8 @@ class TestCobaSudo(BaseTest):
         """
         Restore a file with a non-existing user name.
         """
+        if not user_a:
+            raise SkipTest()
         self.check_restore(old_user=user_a, new_user=user_b,
                            exp_user=user_b, rev_attrs={'user_name':
                            'coba_test_c'}, user='name')
