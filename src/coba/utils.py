@@ -31,6 +31,7 @@ Various utilities.
 """
 
 import errno
+import hashlib
 import os
 import os.path
 import re
@@ -46,7 +47,8 @@ __all__ = [
     'is_in_dir',
     'make_dirs',
     'match_path',
-    'normalize_path'
+    'normalize_path',
+    'sha1',
 ]
 
 
@@ -232,4 +234,13 @@ def filemode(mode):
     return "".join(perm)
 
 # End of the code taken from ``stat.py`` of Python 3.4.
+
+
+def sha1(s):
+    """
+    SHA1 hex digest of a string.
+    """
+    hasher = hashlib.sha1()
+    hasher.update(s)
+    return hasher.hexdigest()
 

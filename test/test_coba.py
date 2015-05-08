@@ -242,7 +242,7 @@ class TestCoba(BaseTest):
         self.wait()
         revs = self.revs('foo/bar')
         eq(len(revs), 1)
-        eq(revs[0].hashsum, hash)
+        eq(revs[0].content_hash, hash)
 
     def test_empty_file_creation(self):
         """
@@ -253,7 +253,7 @@ class TestCoba(BaseTest):
         self.wait()
         revs = self.revs('foo/bar')
         eq(len(revs), 1)
-        eq(revs[0].hashsum, hash)
+        eq(revs[0].content_hash, hash)
 
     def test_file_modification(self):
         """
@@ -265,7 +265,7 @@ class TestCoba(BaseTest):
         self.wait()
         revs = self.revs('foo/bar')
         eq(len(revs), 1)
-        eq(revs[0].hashsum, hash)
+        eq(revs[0].content_hash, hash)
 
     def test_mtime_modification(self):
         """
@@ -277,7 +277,7 @@ class TestCoba(BaseTest):
         self.wait()
         revs = self.revs('foo/bar')
         eq(len(revs), 1)
-        eq(revs[0].hashsum, hash)
+        eq(revs[0].content_hash, hash)
         eq(revs[0].mtime, 10)
 
     def test_mode_modification(self):
@@ -292,7 +292,7 @@ class TestCoba(BaseTest):
         self.wait()
         revs = self.revs('foo/bar')
         eq(len(revs), 1)
-        eq(revs[0].hashsum, hash)
+        eq(revs[0].content_hash, hash)
         eq(revs[0].mode, mode)
 
     def test_file_move_within_watch(self):
@@ -305,7 +305,7 @@ class TestCoba(BaseTest):
         self.wait()
         revs = self.revs('foo/baz')
         eq(len(revs), 1)
-        eq(revs[0].hashsum, hash)
+        eq(revs[0].content_hash, hash)
 
     def test_file_move_between_watches(self):
         """
@@ -317,7 +317,7 @@ class TestCoba(BaseTest):
         self.wait()
         revs = self.revs('foz/bar')
         eq(len(revs), 1)
-        eq(revs[0].hashsum, hash)
+        eq(revs[0].content_hash, hash)
 
     def test_file_move_into_watch(self):
         """
@@ -329,7 +329,7 @@ class TestCoba(BaseTest):
         self.wait()
         revs = self.revs('foz/bar')
         eq(len(revs), 1)
-        eq(revs[0].hashsum, hash)
+        eq(revs[0].content_hash, hash)
 
     def test_directory_move_within_watch(self):
         """
@@ -341,7 +341,7 @@ class TestCoba(BaseTest):
         self.wait()
         revs = self.revs('foo/baz/qux')
         eq(len(revs), 1)
-        eq(revs[0].hashsum, hash)
+        eq(revs[0].content_hash, hash)
 
     def test_directory_move_between_watches(self):
         """
@@ -353,7 +353,7 @@ class TestCoba(BaseTest):
         self.wait()
         revs = self.revs('foz/bar/qux')
         eq(len(revs), 1)
-        eq(revs[0].hashsum, hash)
+        eq(revs[0].content_hash, hash)
 
     def test_directory_move_into_watch(self):
         """
@@ -365,7 +365,7 @@ class TestCoba(BaseTest):
         self.wait()
         revs = self.revs('foz/bar/qux')
         eq(len(revs), 1)
-        eq(revs[0].hashsum, hash)
+        eq(revs[0].content_hash, hash)
 
     def test_restore_file_no_content(self):
         """
@@ -413,7 +413,7 @@ class TestCoba(BaseTest):
         self.backup('foo/bar')
         revs = self.revs('foo/bar')
         eq(len(revs), 1)
-        eq(revs[0].hashsum, hash)
+        eq(revs[0].content_hash, hash)
         target = revs[0].restore(target=self.path('foo/baz'), content=False)
         ok(not target.exists())
 
@@ -428,7 +428,7 @@ class TestCoba(BaseTest):
         eq(len(self.revs('foo/bar.bar')), 0)
         revs = self.revs('foo/bar.baz')
         eq(len(revs), 1)
-        eq(revs[0].hashsum, hash)
+        eq(revs[0].content_hash, hash)
 
     def test_backup_file_size(self):
         """

@@ -38,7 +38,7 @@ import pathlib
 
 from .config import Configuration
 from .stores import BlobStore, local_storage_driver, PathStore
-from .utils import make_dirs, normalize_path
+from .utils import make_dirs, normalize_path, sha1
 from .watch import Service
 from .warnings import (GroupMismatchWarning, NoSuchGroupWarning,
                        NoSuchUserWarning, UserMismatchWarning, warn)
@@ -121,27 +121,23 @@ class File(object):
         """
 
         with self.path.open('rb') as f:
-            hashsum = self._coba._blob_store.put(f)
+            content_hash = self._coba._blob_store.put(f)
         try:
             stats = self.path.stat()
             user_name = pwd.getpwuid(stats.st_uid).pw_name
             group_name = grp.getgrgid(stats.st_gid).gr_name
             revisions = self.get_revisions()
-            if revisions:
-                id = max(rev.id for rev in revisions) + 1
-            else:
-                id = 1
-            revision = Revision(self, id, time.time(), hashsum, stats.st_mtime,
-                                stats.st_uid, user_name, stats.st_gid,
-                                group_name, stat.S_IMODE(stats.st_mode),
-                                stats.st_size)
+            revision = Revision(self, time.time(), content_hash,
+                                stats.st_mtime, stats.st_uid, user_name,
+                                stats.st_gid, group_name,
+                                stat.S_IMODE(stats.st_mode), stats.st_size)
             revisions.append(revision)
             self._set_revisions(revisions)
             return revision
         except:
             # FIXME: We must not do this, since the same content could
             # be referred to by a different revision.
-            self._coba._blob_store.remove(hashsum)
+            self._coba._blob_store.remove(content_hash)
             raise
 
     def filter_revisions(self, hash=None, unique=False):
@@ -161,11 +157,11 @@ class File(object):
         if not revs:
             return []
         if hash:
-            revs = [rev for rev in revs if rev.hashsum.startswith(hash)]
+            revs = [rev for rev in revs if rev.get_hash().startswith(hash)]
         if unique:
             most_recent = collections.OrderedDict()
             for rev in revs:
-                most_recent[rev.hashsum] = rev
+                most_recent[rev.get_hash()] = rev
             revs = most_recent.values()
         return revs
 
@@ -194,7 +190,7 @@ class Revision(object):
 
         Timestamp of the moment the revision was created.
 
-    .. py:attribute:: hashsum
+    .. py:attribute:: content_hash
 
         Hashsum of the file's content when the revision was created.
 
@@ -229,7 +225,7 @@ class Revision(object):
         The file's size in bytes when the revision was created.
     """
 
-    def __init__(self, file, id, timestamp, hashsum, mtime, user_id,
+    def __init__(self, file, timestamp, content_hash, mtime, user_id,
                  user_name, group_id, group_name, mode, size):
         """
         Constructor.
@@ -237,10 +233,9 @@ class Revision(object):
         Do not instantiate this class directly. Use
         :py:meth:`File.get_revisions` instead.
         """
-        self.id = id
         self.file = file
         self.timestamp = timestamp
-        self.hashsum = hashsum
+        self.content_hash = content_hash
         self.mtime = mtime
         self.user_id = user_id
         self.user_name = user_name
@@ -312,7 +307,8 @@ class Revision(object):
 
         ``target`` is a :py:class:`pathlib.Path` instance.
         """
-        with self.file._coba._blob_store.get_file(self.hashsum) as in_file:
+        store = self.file._coba._blob_store
+        with store.get_file(self.content_hash) as in_file:
             with target.open('wb') as out_file:
                 while True:
                     block = in_file.read(block_size)
@@ -389,8 +385,18 @@ class Revision(object):
         """
         Returns a JSON-serializable view of the revision.
         """
-        return {k: v for k, v in self.__dict__.iteritems() if not
-                k.startswith('_') and k != 'file'}
+        return collections.OrderedDict(
+            (k, self.__dict__[k]) for k in sorted(self.__dict__) if not
+            k.startswith('_') and k != 'file')
+
+    def get_hash(self):
+        """
+        Hash which can be used to identify the revision.
+
+        The hash uniquely identifies the revision among all revisions of
+        the same file.
+        """
+        return sha1(json.dumps(self, separators=(',', ':'), cls=_JSONEncoder))
 
 
 class Coba(object):

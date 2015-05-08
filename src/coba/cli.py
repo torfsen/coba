@@ -42,6 +42,7 @@ import sys
 import click
 
 from . import Coba
+from .utils import filemode
 
 
 log = logging.getLogger(__name__)
@@ -109,9 +110,42 @@ def _init_logging(level):
     warnings_logger.addHandler(stderr_handler)
 
 
-def _format_revision(rev):
-    return '%s %s' % (datetime.datetime.fromtimestamp(rev.timestamp),
-                      rev.hashsum)
+def _print_matrix(matrix, margin=' '):
+    """
+    Print a 2D array with aligned columns.
+
+    ``matrix`` is a 2D array, where ``matrix[i][j]`` is row ``i`` and
+    column ``j``.
+
+    ``margin`` is the string that is put between columns.
+    """
+    if not matrix:
+        return
+    max_len = [len(c) for c in matrix[0]]
+    for row in matrix[1:]:
+        for i, c in enumerate(row):
+            max_len[i] = max(len(c), max_len[i])
+    for row in matrix:
+        print margin.join(c.rjust(n) for c, n in zip(row, max_len))
+
+
+def _print_revisions(revs):
+    """
+    Print a list of revisions to STDOUT.
+    """
+    lines = []
+    for rev in revs:
+        dt = datetime.datetime.fromtimestamp(rev.timestamp)
+        lines.append((
+            filemode(rev.mode),
+            rev.user_name,
+            rev.group_name,
+            str(rev.size),
+            dt.strftime('%Y-%m-%d'),
+            dt.strftime('%H:%M:%S'),
+            rev.get_hash()
+        ))
+    _print_matrix(lines)
 
 
 # Log levels for --verbosity option
@@ -226,19 +260,15 @@ def kill(ctx):
 
 @_command
 @click.argument('PATH', type=click.Path())
-@click.option('--hash', help='Revision hash')
+@click.option('--hash', help='(Partial) revision hash')
 def revs(ctx, path, hash):
     """
     List a file's revisions.
-
-    Use the `--hash` option to only display revisions whose hash starts
-    with a given value.
     """
     f = ctx.obj.file(path)
-    revs = f.filter_revisions(hash=hash, unique=False)
+    revs = f.filter_revisions(hash)
     if revs:
-        for rev in reversed(revs):
-            print _format_revision(rev)
+        _print_revisions(revs)
     else:
         log.info('No revisions for "%s".' % f.path)
 
@@ -261,8 +291,7 @@ def restore(ctx, path, target, hash):
     The revision hash given using `--hash` can be partial (i.e. only a
     part of the full hash, starting from its first character) but must
     unambiguously identify a single revision. More precisely, it must
-    identify a single full revision hash (which may be shared by
-    multiple revisions containing the same content).
+    identify a single full revision hash.
 
     Use the `revs` command to list available revisions for a file.
     """
@@ -278,8 +307,8 @@ def restore(ctx, path, target, hash):
     target = revs[0].restore(target)
     if target == f.path:
         log.info('Restored content of "%s" from revision "%s".' % (f.path,
-                 revs[0].hashsum))
+                 revs[0].get_hash()))
     else:
         log.info('Restored content of "%s" from revision "%s" to "%s".' % (
-                 f.path, revs[0].hashsum, target))
+                 f.path, revs[0].get_hash(), target))
 
