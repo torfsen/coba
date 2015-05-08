@@ -168,6 +168,8 @@ class TestCobaSudo(BaseTest):
         """
         Restore a file with a non-existing group ID.
         """
+        if not user_a:
+            raise SkipTest()
         exp_group = _max_gid + 1
         self.check_restore(old_group=group_a, new_group=group_b,
                            exp_group=exp_group, rev_attrs={'group_id':
@@ -195,6 +197,8 @@ class TestCobaSudo(BaseTest):
         """
         Restore a file with a non-existing user id.
         """
+        if not user_a:
+            raise SkipTest()
         exp_user = _max_uid + 1
         self.check_restore(old_user=user_a, new_user=user_b,
                            exp_user=exp_user, rev_attrs={'user_id':
