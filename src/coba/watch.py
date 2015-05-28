@@ -26,6 +26,7 @@ File-system watching.
 """
 
 import functools
+import logging
 import os.path
 import sys
 import threading
@@ -218,9 +219,7 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
         self._queue.register_file_deletion(event.src_path)
 
     def _register_file_modification(self, path):
-        if self._is_ignored(path):
-            self._logger.debug('Ignoring modification of "%s".' % path)
-        else:
+        if not self._is_ignored(path):
             self._queue.register_file_modification(path)
 
     def on_moved(self, event):
@@ -322,8 +321,16 @@ class Service(service.Service):
         super(Service, self).__init__('coba', pid_dir=config.pid_dir)
         self._backup = backup
         self._config = config
-        self.logger.setLevel(config.log_level)
         self._observers = []
+        self._init_logging()
+
+    def _init_logging(self):
+        self.log_file_path = os.path.join(self._config.log_dir, 'coba.log')
+        handler = logging.FileHandler(self.log_file_path, encoding='utf8')
+        format = '%(asctime)s <%(levelname)s> %(message)s'
+        handler.setFormatter(logging.Formatter(format, '%Y-%m-%d %H:%M:%S'))
+        self.logger.addHandler(handler)
+        self.logger.setLevel(self._config.log_level)
 
     def _install_exception_hook(self):
         def hook(type, value, traceback):

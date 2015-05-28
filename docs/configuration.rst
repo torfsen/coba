@@ -56,6 +56,16 @@ To match a single ``\`` use ``\\``.
 name starts with a dot)
 
 
+.. _config_log_dir:
+
+``log_dir``
+-----------
+Directory in which Coba's log files are stored. This directory is created if it
+does not exist.
+
+**Default:** ``~/.coba/log``
+
+
 .. _config_log_level:
 
 ``log_level``
@@ -64,9 +74,9 @@ Verbosity of the log output. The higher this value is, the less verbose the
 log output will be. A value of 10 shows debugging output, 20 shows general
 information, 30 shows warnings, and 40 shows only errors.
 
-This only controls the output of the :ref:`backup daemon <usage_daemon>` to
-syslog. The verbosity of the ``coba`` command line utility can be controlled
-via its ``-v`` argument.
+This only controls the output of the :ref:`backup daemon <usage_daemon>`. The
+verbosity of the ``coba`` command line utility can be controlled via its ``-v``
+argument.
 
 **Default:** ``1``
 

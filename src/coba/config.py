@@ -54,6 +54,11 @@ class Configuration(object):
         The syntax for the patterns is that of
         :py:func:`coba.utils.match_path`.
 
+    .. py:attribute:: log_dir
+
+        Directory in which Coba's log files are stored. This directory
+        is created if it does not exist.
+
     .. py:attribute:: log_level
 
         Verbosity of the log output. The higher this value is, the less
@@ -92,6 +97,7 @@ class Configuration(object):
         coba_dir = os.path.join(home, '.coba')
         self.idle_wait_time = 5
         self.ignored = ['**/.*/**']
+        self.log_dir = os.path.join(coba_dir, 'log')
         self.log_level = 1
         self.pid_dir = coba_dir
         self.storage_dir = os.path.join(coba_dir, 'storage')

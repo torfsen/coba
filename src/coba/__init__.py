@@ -416,6 +416,7 @@ class Coba(object):
         Otherwise the default configuration is used.
         """
         self.config = config or Configuration.load()
+        make_dirs(self.config.log_dir)
         make_dirs(self.config.pid_dir)
         driver = local_storage_driver(self.config.storage_dir)
         self._blob_store = BlobStore(driver, 'coba-blobs')
