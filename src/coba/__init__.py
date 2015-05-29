@@ -25,6 +25,7 @@
 Coba main module.
 """
 
+import codecs
 import collections
 import datetime
 import grp
@@ -38,7 +39,7 @@ import pathlib
 
 from .config import Configuration
 from .stores import BlobStore, local_storage_driver, PathStore
-from .utils import make_dirs, normalize_path, sha1
+from .utils import make_dirs, normalize_path, sha1, tail
 from .watch import Service
 from .warnings import (GroupMismatchWarning, NoSuchGroupWarning,
                        NoSuchUserWarning, UserMismatchWarning, warn)
@@ -493,4 +494,21 @@ class Coba(object):
         given path.
         """
         return File(self, path)
+
+    def get_log(self, lines=10):
+        """
+        Get the latest log messages from the backup daemon.
+
+        Returns the latest ``lines`` log messages issued by Coba's
+        backup daemon. If the log file contains less than ``lines``
+        lines all of its lines are returned.
+        """
+        try:
+            with codecs.open(self.config.log_file, encoding='utf8') as f:
+                return ''.join(tail(f, lines))
+        except IOError as e:
+            if e.errno == errno.ENOENT:
+                # Log file does not exist
+                return ''
+            raise
 

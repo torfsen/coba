@@ -32,6 +32,7 @@ Various utilities.
 
 import errno
 import hashlib
+import mmap
 import os
 import os.path
 import re
@@ -49,6 +50,7 @@ __all__ = [
     'match_path',
     'normalize_path',
     'sha1',
+    'tail',
 ]
 
 
@@ -243,4 +245,32 @@ def sha1(s):
     hasher = hashlib.sha1()
     hasher.update(s)
     return hasher.hexdigest()
+
+
+def tail(f, n=10):
+    """
+    Return lines from the end of a file.
+
+    ``f`` is an open file object.
+
+    Returns a list of the last ``n`` lines in the file, or less if the
+    file contains less than ``n`` lines. Newline characters are not
+    removed.
+    """
+    lines = []
+    try:
+        mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+    except ValueError:
+        # Empty file
+        return []
+    try:
+        j = mm.size()
+        while len(lines) < n and j > 0:
+            i = mm.rfind('\n', 0, j - 1)
+            lines.append(mm[i + 1:j])
+            j = i + 1
+        lines.reverse()
+        return lines
+    finally:
+        mm.close()
 

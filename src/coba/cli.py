@@ -45,10 +45,10 @@ from . import Coba
 from .utils import filemode
 
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 # Make sure no default warning is displayed if there's an error before
 # logging is fully initialized.
-log.addHandler(logging.NullHandler())
+logger.addHandler(logging.NullHandler())
 
 
 class _MaxLevelFilter(logging.Filter):
@@ -76,7 +76,7 @@ def _handle_errors(f):
         try:
             return f(*args, **kwargs)
         except Exception as e:
-            log.debug(traceback.format_exc())
+            logger.debug(traceback.format_exc())
             sys.exit('Error: %s' % e)
     return wrapper
 
@@ -99,11 +99,11 @@ def _init_logging(level):
     """
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.addFilter(_MaxLevelFilter(logging.WARNING))
-    log.addHandler(stdout_handler)
+    logger.addHandler(stdout_handler)
     stderr_handler = logging.StreamHandler(sys.stderr)
     stderr_handler.setLevel(logging.WARNING)
-    log.addHandler(stderr_handler)
-    log.setLevel(level)
+    logger.addHandler(stderr_handler)
+    logger.setLevel(level)
     logging.captureWarnings(True)
     warnings.showwarning = _showwarning
     warnings_logger = logging.getLogger('py.warnings')
@@ -239,7 +239,7 @@ def status(ctx):
     """
     if ctx.obj.is_running():
         print "The backup daemon is running."
-        log.info('Daemon PID is %d.' % ctx.obj.get_pid())
+        logger.info('Daemon PID is %d.' % ctx.obj.get_pid())
     else:
         print "The backup daemon is not running."
         sys.exit(1)
@@ -270,7 +270,7 @@ def revs(ctx, path, hash):
     if revs:
         _print_revisions(revs)
     else:
-        log.info('No revisions for "%s".' % f.path)
+        logger.info('No revisions for "%s".' % f.path)
 
 
 @_command
@@ -301,14 +301,26 @@ def restore(ctx, path, target, hash):
         raise ValueError('No revision for "%s" fits hash "%s".' % (f.path,
                          hash))
     if len(revs) > 1:
-        log.info('Revisions for "%s" fitting "%s":\n    ' % (f.path, hash) +
+        logger.info('Revisions for "%s" fitting "%s":\n    ' % (f.path, hash) +
                  '\n    '.join(_format_revision(r) for r in revs))
         raise ValueError('Hash "%s" for "%s" is ambiguous.' % (hash, f.path))
     target = revs[0].restore(target)
     if target == f.path:
-        log.info('Restored content of "%s" from revision "%s".' % (f.path,
+        logger.info('Restored content of "%s" from revision "%s".' % (f.path,
                  revs[0].get_hash()))
     else:
-        log.info('Restored content of "%s" from revision "%s" to "%s".' % (
+        logger.info('Restored content of "%s" from revision "%s" to "%s".' % (
                  f.path, revs[0].get_hash(), target))
+
+
+@_command
+@click.option('--lines', '-n', default=10, help='Number of lines to show')
+def log(ctx, lines):
+    """
+    Show log messages.
+
+    Displays the latest log messages from the Coba backup daemon. By default,
+    the 10 latest lines are shown.
+    """
+    sys.stdout.write(ctx.obj.get_log(lines))
 

@@ -25,6 +25,11 @@
 Tests for ``coba.utils``.
 """
 
+import codecs
+import contextlib
+import os.path
+import tempfile
+
 from nose.tools import eq_ as eq, ok_ as ok, raises
 
 from coba.utils import *
@@ -125,4 +130,44 @@ def test_match_path_invalid_patterns():
         match_path(pattern, 'foo')
     for pattern in '**foo foo** foo/**bar foo**/bar foo**bar bar\\'.split():
         yield check, pattern
+
+
+#
+# Tests for ``tail``
+#
+
+@contextlib.contextmanager
+def temp_file(content=''):
+    """
+    Context manager that creates a temporary file with given content.
+
+    The file is removed once the content manager exits.
+    """
+    f = tempfile.NamedTemporaryFile(delete=False)
+    f.close()
+    try:
+        with codecs.open(f.name, 'w+', encoding='utf8') as g:
+            g.write(content)
+            g.seek(0)
+            yield g
+    finally:
+        os.unlink(f.name)
+
+
+def test_tail():
+    def check(content, expected):
+        with temp_file(content) as f:
+            eq(tail(f, 3), expected)
+
+    for content, expected in [
+        ('', []),
+        ('\n', ['\n']),
+        ('foobar', ['foobar']),
+        ('foobar\n', ['foobar\n']),
+        ('foo\nbar', ['foo\n', 'bar']),
+        ('foo\nbar\n', ['foo\n', 'bar\n']),
+        ('a\nb\nc\nd', ['b\n', 'c\n', 'd']),
+        ('a\nb\nc\nd\n', ['b\n', 'c\n', 'd\n']),
+    ]:
+        yield check, content, expected
 

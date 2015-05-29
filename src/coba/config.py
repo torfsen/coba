@@ -85,6 +85,13 @@ class Configuration(object):
         have been modified. The directories should be disjoint, i.e.
         no directory in the list should be contained in another
         directory in the list.
+
+    In addition, the following configuration values are automatically
+    derived from the other settings and can only be read:
+
+    .. py:attribute:: log_file
+
+        Filename of Coba's log file. Derived from :py:attr:`log_dir`.
     """
 
     def __init__(self, **kwargs):
@@ -107,6 +114,10 @@ class Configuration(object):
                 setattr(self, key, value)
             else:
                 raise AttributeError(key)
+
+    @property
+    def log_file(self):
+        return os.path.join(self.log_dir, 'coba.log')
 
     @staticmethod
     def default_location():

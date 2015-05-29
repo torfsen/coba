@@ -325,8 +325,7 @@ class Service(service.Service):
         self._init_logging()
 
     def _init_logging(self):
-        self.log_file_path = os.path.join(self._config.log_dir, 'coba.log')
-        handler = logging.FileHandler(self.log_file_path, encoding='utf8')
+        handler = logging.FileHandler(self._config.log_file, encoding='utf8')
         format = '%(asctime)s <%(levelname)s> %(message)s'
         handler.setFormatter(logging.Formatter(format, '%Y-%m-%d %H:%M:%S'))
         self.logger.addHandler(handler)

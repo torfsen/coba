@@ -37,14 +37,8 @@ In case you need to stop the daemon, simply use the ``stop`` command::
     returns immediately, however. If you need to be sure that the daemon has
     completely stopped use the ``status`` command.
 
-The daemon uses syslog_ to output messages. How you can view these depends on
-your *syslog* configuration. For example, on Ubuntu the following command
-displays the latest messages from the daemon::
-
-    $ grep coba /var/log/syslog
-
-
-.. _syslog: https://en.wikipedia.org/wiki/Syslog
+The daemon uses a :ref:`log file <config_log_dir>` to output messages. These
+messages can be displayed using the ``log`` command.
 
 
 .. _usage_backups:
