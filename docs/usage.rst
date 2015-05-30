@@ -52,20 +52,20 @@ assuming the Coba :ref:`daemon <usage_daemon>` is running, the file is in a
 them using the ``revs`` command::
 
     $ coba revs example.txt
-    2015-05-02 11:43:52.116253 53c234e5e8472...
-    2015-05-02 11:42:25.354735 4355a46b19d34...
+    -rw-rw-r-- torf torf  8 2015-05-29 22:01:42 59b844f072...
+    -rw-rw-r-- torf torf 18 2015-05-29 22:01:57 6d540a45e6...
 
-Each line of the output above shows the details of a single revision: The date
-and time the revision was created and a hash_ of the file's content at that
-moment.
+Each line of the output above shows the details of a single revision: The
+file's permission bits, owner, group, size, the date and time the revision was
+created, and a hash_ of the file's content at that moment.
 
 If we now edit ``example.txt``, a new revision will be created::
 
     $ echo foo > example.txt
     $ coba revs example.txt
-    2015-05-02 14:08:37.836287 b5bb9d8014a0f...
-    2015-05-02 11:43:52.116253 53c234e5e8472...
-    2015-05-02 11:42:25.354735 4355a46b19d34...
+    -rw-rw-r-- torf torf  8 2015-05-29 22:01:42 59b844f0729...
+    -rw-rw-r-- torf torf 18 2015-05-29 22:01:57 6d540a45e63...
+    -rw-rw-r-- torf torf  4 2015-05-29 22:02:39 523287d4a24...
 
 .. note::
     To increase efficiency, Coba does not backup modified files immediately
@@ -83,8 +83,8 @@ Continuing our :ref:`previous example <usage_backups>`, let's assume that we
 regret our last edit of ``example.txt`` and want to restore the previous
 revision. This is easy using the ``restore`` command::
 
-    $ coba -v restore --hash 53 example.txt
-    Restored content of "example.txt" from revision "53c234e5e8472...".
+    $ coba -v restore --hash 6d example.txt
+    Restored content of "example.txt" from revision "6d540a45e63...".
 
 The value of the ``--hash`` option is the hash of the revision that we want to
 restore. To make your life easier you only need to specify enough characters
@@ -97,7 +97,7 @@ to uniquely identify one of the revisions.
 By default, restoring a revision replaces the original file. You can also
 restore it somewhere else::
 
-    $ coba -v restore --hash 53 example.txt restored.txt
-    Restored content of "example.txt" from revision "53c234e5e8472..."
+    $ coba -v restore --hash 6d example.txt restored.txt
+    Restored content of "example.txt" from revision "6d540a45e63..."
     to "restored.txt".
 
