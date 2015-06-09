@@ -27,13 +27,16 @@ Tests for ``coba``.
 
 import codecs
 import errno
+import functools
 import grp
 import hashlib
+import inspect
 import os
 import os.path
 import pwd
 import shutil
 import stat
+import sys
 import tempfile
 import time
 
@@ -62,10 +65,51 @@ def _hash(value):
     return hasher.hexdigest()
 
 
+def _print_logfile_on_error(fun):
+    """
+    Decorator that prints log file contents on error.
+
+    This is a hack to display the backup daemon's log files when a test
+    fails. The problem is that the backup daemon runs in a separate
+    process, so its log messages are not captures by nose's logcapture
+    plugin. We therefore print them "manually" when a test fails.
+
+    The decorator is applied automagically in
+    ``BaseTest.__getattribute__``.
+    """
+    @functools.wraps(fun)
+    def wrapper(*args, **kwargs):
+        try:
+            return fun(*args, **kwargs)
+        except SkipTest:
+            raise
+        except Exception:
+            exc_info = sys.exc_info()
+            try:
+                filename = fun.__self__.coba.config.log_file
+                with codecs.open(filename, 'r', encoding='utf8') as f:
+                    print '\n===== START OF LOG FILE CONTENTS ====='
+                    print f.read()
+                    print '===== END OF LOG FILE CONTENTS =====\n'
+            except AttributeError:
+                # Coba not set up for this test
+                pass
+            raise exc_info[0], exc_info[1], exc_info[2]
+    return wrapper
+
+
 class BaseTest(object):
     """
     Base class for testing ``coba.Coba``.
     """
+
+    def __getattribute__(self, name):
+        getattribute = super(BaseTest, self).__getattribute__
+        attr = getattribute(name)
+        if name.startswith('test_') and inspect.ismethod(attr):
+            attr = _print_logfile_on_error(attr)
+        return attr
+
     def setup(self):
         self.temp_dir = tempfile.mkdtemp()
         self.coba = None
@@ -88,6 +132,7 @@ class BaseTest(object):
             'idle_wait_time': 0,
             'pid_dir': self.temp_dir,
             'watched_dirs': [self.path(d) for d in args],
+            'log_dir': self.path('logs'),
         }
         config_args.update(kwargs)
         config = Configuration(**config_args)
