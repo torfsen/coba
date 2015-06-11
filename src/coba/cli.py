@@ -51,6 +51,12 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
+# By default, the CLI functions load the configuration from disk. You
+# can inject a custom ``coba.config.Configuration`` instance here, e.g.
+# for testing.
+_config = None
+
+
 class _MaxLevelFilter(logging.Filter):
     """
     Logging filter that discards messages with too high a level.
@@ -83,7 +89,7 @@ def _handle_errors(f):
 
 def _showwarning(message, *args, **kwargs):
     """
-    Custom version of `warnings.showwarning``.
+    Custom version of ``warnings.showwarning``.
     """
     sys.stderr.write('Warning: %s\n' % message)
 
@@ -192,7 +198,7 @@ def main(ctx, verbose):
     """
     level = _VERBOSITY_LOG_LEVELS[min(verbose, len(_VERBOSITY_LOG_LEVELS) - 1)]
     _init_logging(level)
-    ctx.obj = Coba()
+    ctx.obj = Coba(config=_config)
 
 
 def _command(f):
