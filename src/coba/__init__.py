@@ -82,7 +82,7 @@ class File(object):
         """
         JSON object hook.
         """
-        return Revision(self, **d)
+        return Revision(store=self._coba._blob_store, path=self.path, **d)
 
     def get_revisions(self):
         """
@@ -128,9 +128,9 @@ class File(object):
             user_name = pwd.getpwuid(stats.st_uid).pw_name
             group_name = grp.getgrgid(stats.st_gid).gr_name
             revisions = self.get_revisions()
-            revision = Revision(self, time.time(), content_hash,
-                                stats.st_mtime, stats.st_uid, user_name,
-                                stats.st_gid, group_name,
+            revision = Revision(self._coba._blob_store, self.path, time.time(),
+                                content_hash, stats.st_mtime, stats.st_uid,
+                                user_name, stats.st_gid, group_name,
                                 stat.S_IMODE(stats.st_mode), stats.st_size)
             revisions.append(revision)
             self._set_revisions(revisions)
@@ -177,10 +177,14 @@ class Revision(object):
     """
     A revision of a file.
 
-    .. py:attribute:: file
+    .. py:attribute:: store
 
-        A :py:class:`File` instance describing the revision's source
-        location on disk.
+        The :py:class:`Store` instance which contains the revision.
+
+    .. py:attribute:: path
+
+        A :py:class:`pathlib.Path` instance describing the revision's
+        source location on disk.
 
     .. py:attribute:: id
 
@@ -226,7 +230,7 @@ class Revision(object):
         The file's size in bytes when the revision was created.
     """
 
-    def __init__(self, file, timestamp, content_hash, mtime, user_id,
+    def __init__(self, store, path, timestamp, content_hash, mtime, user_id,
                  user_name, group_id, group_name, mode, size):
         """
         Constructor.
@@ -234,7 +238,8 @@ class Revision(object):
         Do not instantiate this class directly. Use
         :py:meth:`File.get_revisions` instead.
         """
-        self.file = file
+        self.store = store
+        self.path = normalize_path(path)
         self.timestamp = timestamp
         self.content_hash = content_hash
         self.mtime = mtime
@@ -283,9 +288,9 @@ class Revision(object):
         Returns the final target path to which the revision was
         restored.
         """
-        target = pathlib.Path(target or self.file.path)
+        target = pathlib.Path(target or self.path)
         if target.is_dir():
-            target = target.joinpath(self.file.path.name)
+            target = target.joinpath(self.path.name)
         target = normalize_path(target)
         if content:
             self._restore_content(target, block_size)
@@ -308,8 +313,7 @@ class Revision(object):
 
         ``target`` is a :py:class:`pathlib.Path` instance.
         """
-        store = self.file._coba._blob_store
-        with store.get_file(self.content_hash) as in_file:
+        with self.store.get_file(self.content_hash) as in_file:
             with target.open('wb') as out_file:
                 while True:
                     block = in_file.read(block_size)
@@ -386,9 +390,9 @@ class Revision(object):
         """
         Returns a JSON-serializable view of the revision.
         """
-        return collections.OrderedDict(
-            (k, self.__dict__[k]) for k in sorted(self.__dict__) if not
-            k.startswith('_') and k != 'file')
+        return collections.OrderedDict((k, self.__dict__[k]) for k in
+                                       sorted(self.__dict__) if k not in
+                                       ('path', 'store'))
 
     def get_hash(self):
         """
