@@ -43,11 +43,7 @@ from .utils import binary_file_iterator, make_dirs, normalize_path
 __all__ = [
     'AbstractStore',
     'BlobStore',
-    'ChainedTransformer',
-    'CompressTransformer',
     'CompressAndHashTransformer',
-    'JSONStore',
-    'JSONTransformer',
     'local_storage_driver',
     'PathStore',
     'StringStore',
@@ -133,37 +129,15 @@ class Transformer(object):
         return value
 
 
-class CompressTransformer(Transformer):
-    """
-    Takes a file and turns it into a compressed file.
-    """
-    def __init__(self, block_size=2**20):  # flake8: noqa
-        super(CompressTransformer, self).__init__()
-        self.block_size = block_size
-
-    def transform(self, key, value):
-        temp_file = tempfile.TemporaryFile()
-        value.seek(0)
-        with gzip.GzipFile(filename='', fileobj=temp_file,
-                           mode='wb') as gzip_file:
-            while True:
-                block = value.read(self.block_size)
-                if not block:
-                    break
-                gzip_file.write(block)
-        temp_file.seek(0)
-        return key, temp_file
-
-    def invert(self, value):
-        value.seek(0)
-        return gzip.GzipFile(filename='', fileobj=value, mode='rb')
-
-
-class CompressAndHashTransformer(CompressTransformer):
+class CompressAndHashTransformer(Transformer):
     """
     Takes a file and turns it into a compressed file. The key is
     replaced by the data's hashsum.
     """
+    def __init__(self, block_size=2**20):  # flake8: noqa
+        super(Transformer, self).__init__()
+        self.block_size = block_size
+
     def transform(self, key, value):
         hasher = hashlib.sha256()
         temp_file = tempfile.TemporaryFile()
@@ -179,51 +153,9 @@ class CompressAndHashTransformer(CompressTransformer):
         temp_file.seek(0)
         return hasher.hexdigest(), temp_file
 
-
-class JSONTransformer(Transformer):
-    """
-    Takes a Python object and turns it into a JSON-encoded file.
-    """
-    def transform(self, key, value):
-        out_file = cStringIO.StringIO()
-        json.dump(value, out_file, separators=(',', ':'))
-        out_file.seek(0)
-        return key, out_file
-
     def invert(self, value):
         value.seek(0)
-        return json.load(value)
-
-
-class ChainedTransformer(Transformer):
-    """
-    Chain several transformers into one.
-    """
-    def __init__(self, transformers):
-        """
-        Constructor.
-
-        ``transformers`` is a list of :py:class:`Transformer` instances.
-        During upload, these are applied in left-to-right fashion.
-        During download the transformations are inverted from right to
-        left.
-
-        The caller is responsible for ensuring that the transformers
-        are compatiable, i.e. that the output of one transformer is an
-        acceptable input for the next one.
-        """
-        self.transformers = transformers
-
-    def transform(self, key, value):
-        for t in self.transformers:
-            key, value = t.transform(key, value)
-        return key, value
-
-    def invert(self, value):
-        for t in reversed(self.transformers):
-            value = t.invert(value)
-        return value
-
+        return gzip.GzipFile(filename='', fileobj=value, mode='rb')
 
 _undefined = object()
 
@@ -359,29 +291,6 @@ class TransformingStore(AbstractStore):
         key, value = self._transformer.transform(key, value)
         _upload_from_file(self._container, key, value)
         return key
-
-
-class JSONStore(TransformingStore):
-    """
-    Store for JSON data.
-
-    Data is transformed into JSON-encoded strings before upload and
-    decoded after download.
-    """
-    def __init__(self, driver, container_name):
-        super(JSONStore, self).__init__(driver, container_name,
-                                        JSONTransformer())
-
-    def put(self, key, value):
-        """
-        Store data in the store.
-
-        ``value`` is anything that Python's :py:mod:`json` module can
-        encode into a JSON string.
-        """
-        return super(JSONStore, self)._put(key, value)
-
-    __setitem__ = put
 
 
 class BlobStore(TransformingStore):
