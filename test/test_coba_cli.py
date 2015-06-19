@@ -33,20 +33,13 @@ import stat
 import tempfile
 import time
 
-from click.testing import CliRunner
+from click.testing import CliRunner, Result
 from nose.tools import eq_ as eq, ok_ as ok
 
 from coba import Coba
 import coba.cli
 from coba.config import Configuration
 from coba.utils import sha1
-
-
-def assert_exit_code(result, code):
-    if result.exit_code != code:
-        print result.output
-        raise AssertionError('Exit code is %d, expected %d.' %
-                             (result.exit_code, code))
 
 
 def assert_matches(pattern, string):
@@ -84,25 +77,42 @@ class TestCobaCLI(object):
         config_args.update(kwargs)
         coba.cli._config = Configuration(**config_args)
         runner = CliRunner()
-        return runner.invoke(coba.cli.main, args)
+        result = runner.invoke(coba.cli.main, args)
+        # Fix for Click issue #362
+        exit_code, output = result.exit_code, result.output
+        try:
+            if exit_code != int(exit_code):
+                raise ValueError
+        except ValueError:
+            output += exit_code + '\n'
+            exit_code = 1
+        return exit_code, output
 
     def test_status_not_running(self):
-        result = self.run('status')
-        assert_exit_code(result, 1)
-        eq(result.output, 'The backup daemon is not running.\n')
+        code, output = self.run('status')
+        eq(code, 1)
+        eq(output, 'The backup daemon is not running.\n')
 
     def test_status_running(self):
         self.run('start')
         time.sleep(1)
-        result = self.run('status')
-        assert_exit_code(result, 0)
-        eq(result.output, 'The backup daemon is running.\n')
+        code, output = self.run('status')
+        eq(code, 0)
+        eq(output, 'The backup daemon is running.\n')
 
     def test_status_running_verbose(self):
         self.run('start')
         time.sleep(1)
-        result = self.run('-v', 'status')
-        assert_exit_code(result, 0)
+        code, output = self.run('-v', 'status')
+        eq(code, 0)
         assert_matches('The backup daemon is running.\nDaemon PID is \\d+.\n',
-                       result.output)
+                       output)
+
+    def test_start_already_running(self):
+        self.run('start')
+        time.sleep(1)
+        code, output = self.run('start')
+        eq(code, 1)
+        assert_matches('Error: Daemon is already running at PID \\d+.\n',
+                       output)
 
