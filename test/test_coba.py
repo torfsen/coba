@@ -25,20 +25,13 @@
 Tests for ``coba``.
 """
 
-import codecs
 import errno
-import functools
 import grp
 import hashlib
-import inspect
 import os
 import os.path
 import pwd
-import shutil
 import stat
-import sys
-import tempfile
-import time
 
 from nose.tools import (eq_ as eq, ok_ as ok, assert_almost_equal,
                         assert_not_almost_equal)
@@ -46,6 +39,8 @@ from nose.plugins.skip import SkipTest
 
 from coba import Coba
 from coba.config import Configuration
+
+from utils import TempDirTest
 
 
 # Look up Coba test users and groups. See the scripts ``create_test_users.sh``
@@ -65,119 +60,29 @@ def _hash(value):
     return hasher.hexdigest()
 
 
-def _print_logfile_on_error(fun):
-    """
-    Decorator that prints log file contents on error.
-
-    This is a hack to display the backup daemon's log files when a test
-    fails. The problem is that the backup daemon runs in a separate
-    process, so its log messages are not captures by nose's logcapture
-    plugin. We therefore print them "manually" when a test fails.
-
-    The decorator is applied automagically in
-    ``BaseTest.__getattribute__``.
-    """
-    @functools.wraps(fun)
-    def wrapper(*args, **kwargs):
-        try:
-            return fun(*args, **kwargs)
-        except SkipTest:
-            raise
-        except Exception:
-            exc_info = sys.exc_info()
-            try:
-                filename = fun.__self__.coba.config.log_file
-                with codecs.open(filename, 'r', encoding='utf8') as f:
-                    print '\n===== START OF LOG FILE CONTENTS ====='
-                    print f.read()
-                    print '===== END OF LOG FILE CONTENTS =====\n'
-            except AttributeError:
-                # Coba not set up for this test
-                pass
-            raise exc_info[0], exc_info[1], exc_info[2]
-    return wrapper
-
-
-class BaseTest(object):
+class BaseTest(TempDirTest):
     """
     Base class for testing ``coba.Coba``.
     """
 
-    def __getattribute__(self, name):
-        getattribute = super(BaseTest, self).__getattribute__
-        attr = getattribute(name)
-        if name.startswith('test_') and inspect.ismethod(attr):
-            attr = _print_logfile_on_error(attr)
-        return attr
-
     def setup(self):
-        self.temp_dir = tempfile.mkdtemp()
+        super(BaseTest, self).setup()
         self.coba = None
 
     def teardown(self):
         if self.coba:
             self.coba.stop(block=5)
-        for root, filenames, dirnames in os.walk(self.temp_dir):
-            for filename in filenames:
-                fullname = os.path.join(root, filename)
-                os.chmod(fullname, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
-        shutil.rmtree(self.temp_dir)
+        super(BaseTest, self).teardown()
 
-    def path(self, p):
-        return os.path.join(self.temp_dir, p)
 
     def watch(self, *args, **kwargs):
-        config_args = {
-            'storage_dir': self.path('storage'),
-            'idle_wait_time': 0,
-            'pid_dir': self.temp_dir,
-            'watched_dirs': [self.path(d) for d in args],
-            'log_dir': self.path('logs'),
-        }
-        config_args.update(kwargs)
-        config = Configuration(**config_args)
+        self.config_args.update(kwargs)
+        self.config_args['watched_dirs'] = [self.path(d) for d in args]
+        config = Configuration(**self.config_args)
         for d in config.watched_dirs:
             self.mkdir(d)
         self.coba = Coba(config)
         self.coba.start(block=5)
-
-    def mkdir(self, path):
-        path = self.path(path)
-        try:
-            os.makedirs(path)
-        except OSError as e:
-            if e.errno != errno.EEXIST:
-                raise
-        return path
-
-    def write(self, path, content=''):
-        path = self.path(path)
-        self.mkdir(os.path.dirname(path))
-        with codecs.open(path, 'w', encoding='utf8') as f:
-            f.write(content)
-        return _hash(content)
-
-    def read(self, path):
-        path = self.path(path)
-        with codecs.open(path, 'r', encoding='utf8') as f:
-            return f.read()
-
-    def move(self, src, target):
-        src = self.path(src)
-        target = self.path(target)
-        os.rename(src, target)
-
-    def set_mtime(self, path, mtime):
-        os.utime(self.path(path), (mtime, mtime))
-
-    def get_mtime(self, path):
-        return os.path.getmtime(self.path(path))
-
-    def get_mode(self, path):
-        return stat.S_IMODE(os.stat(self.path(path)).st_mode)
-
-    def set_mode(self, path, mode):
-        os.chmod(self.path(path), mode)
 
     def file(self, path):
         return self.coba.file(self.path(path))
@@ -187,9 +92,6 @@ class BaseTest(object):
 
     def backup(self, path):
         return self.file(path).backup()
-
-    def wait(self, seconds=2):
-        time.sleep(seconds)
 
     def chown(self, path, uid, gid):
         if user_a is None:
@@ -201,12 +103,6 @@ class BaseTest(object):
             if e.errno == errno.EPERM:
                 raise SkipTest
             raise
-
-    def get_group(self, path):
-        return os.stat(self.path(path)).st_gid
-
-    def get_user(self, path):
-        return os.stat(self.path(path)).st_uid
 
     def check_restore(self, target=None, compare_path=None, content=True,
                       mtime=True, mode=True, user=True, group=True,
@@ -283,7 +179,7 @@ class TestCoba(BaseTest):
         Backup due to creation of a file.
         """
         self.watch('foo')
-        hash = self.write('foo/bar', 'bazinga')
+        hash = _hash(self.write('foo/bar', 'bazinga'))
         self.wait()
         revs = self.revs('foo/bar')
         eq(len(revs), 1)
@@ -294,7 +190,7 @@ class TestCoba(BaseTest):
         Backup due to creation of an empty file.
         """
         self.watch('foo')
-        hash = self.write('foo/bar')
+        hash = _hash(self.write('foo/bar'))
         self.wait()
         revs = self.revs('foo/bar')
         eq(len(revs), 1)
@@ -306,7 +202,7 @@ class TestCoba(BaseTest):
         """
         self.write('foo/bar', 'bazinga')
         self.watch('foo')
-        hash = self.write('foo/bar', 'new')
+        hash = _hash(self.write('foo/bar', 'new'))
         self.wait()
         revs = self.revs('foo/bar')
         eq(len(revs), 1)
@@ -316,7 +212,7 @@ class TestCoba(BaseTest):
         """
         Backup due to mtime modification.
         """
-        hash = self.write('foo/bar', 'bazinga')
+        hash = _hash(self.write('foo/bar', 'bazinga'))
         self.watch('foo')
         self.set_mtime('foo/bar', 10)
         self.wait()
@@ -329,7 +225,7 @@ class TestCoba(BaseTest):
         """
         Backup due to mode modification.
         """
-        hash = self.write('foo/bar', 'bazinga')
+        hash = _hash(self.write('foo/bar', 'bazinga'))
         self.set_mode('foo/bar', stat.S_IRUSR)
         self.watch('foo')
         mode = stat.S_IRUSR | stat.S_IWUSR
@@ -344,7 +240,7 @@ class TestCoba(BaseTest):
         """
         Backup due to file being moved within a watch.
         """
-        hash = self.write('foo/bar', 'bazinga')
+        hash = _hash(self.write('foo/bar', 'bazinga'))
         self.watch('foo')
         self.move('foo/bar', 'foo/baz')
         self.wait()
@@ -356,7 +252,7 @@ class TestCoba(BaseTest):
         """
         Backup due to file being moved between watches.
         """
-        hash = self.write('foo/bar', 'bazinga')
+        hash = _hash(self.write('foo/bar', 'bazinga'))
         self.watch('foo', 'foz')
         self.move('foo/bar', 'foz/bar')
         self.wait()
@@ -368,7 +264,7 @@ class TestCoba(BaseTest):
         """
         Backup due to file being moved into a watch.
         """
-        hash = self.write('foo/bar', 'bazinga')
+        hash = _hash(self.write('foo/bar', 'bazinga'))
         self.watch('foz')
         self.move('foo/bar', 'foz/bar')
         self.wait()
@@ -380,7 +276,7 @@ class TestCoba(BaseTest):
         """
         Backup due to directory being moved within a watch.
         """
-        hash = self.write('foo/bar/qux', 'bazinga')
+        hash = _hash(self.write('foo/bar/qux', 'bazinga'))
         self.watch('foo')
         self.move('foo/bar', 'foo/baz')
         self.wait()
@@ -392,7 +288,7 @@ class TestCoba(BaseTest):
         """
         Backup due to directory being moved between watches.
         """
-        hash = self.write('foo/bar/qux', 'bazinga')
+        hash = _hash(self.write('foo/bar/qux', 'bazinga'))
         self.watch('foo', 'foz')
         self.move('foo/bar', 'foz/bar')
         self.wait()
@@ -404,7 +300,7 @@ class TestCoba(BaseTest):
         """
         Backup due to directory being moved into a watch.
         """
-        hash = self.write('foo/bar/qux', 'bazinga')
+        hash = _hash(self.write('foo/bar/qux', 'bazinga'))
         self.watch('foz')
         self.move('foo/bar', 'foz/bar')
         self.wait()
@@ -454,7 +350,7 @@ class TestCoba(BaseTest):
         Restore a non-existing file without restoring its content.
         """
         self.watch()
-        hash = self.write('foo/bar', 'bazinga')
+        hash = _hash(self.write('foo/bar', 'bazinga'))
         self.backup('foo/bar')
         revs = self.revs('foo/bar')
         eq(len(revs), 1)
@@ -468,7 +364,7 @@ class TestCoba(BaseTest):
         """
         self.watch('foo', ignored=['**/*.bar'])
         self.write('foo/bar.bar', 'bazinga')
-        hash = self.write('foo/bar.baz', 'bazinga')
+        hash = _hash(self.write('foo/bar.baz', 'bazinga'))
         self.wait()
         eq(len(self.revs('foo/bar.bar')), 0)
         revs = self.revs('foo/bar.baz')
