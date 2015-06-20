@@ -25,6 +25,7 @@
 File-system watching.
 """
 
+import contextlib
 import functools
 import logging
 import os.path
@@ -304,6 +305,25 @@ def _fix_threading_exception_bug():
     threading.Thread.__init__ = new_init
 
 
+@contextlib.contextmanager
+def _original_streams():
+    """
+    Context manager that temporarily restores STDOUT, STDERR and STDIN.
+    """
+    stdout = sys.stdout
+    stderr = sys.stderr
+    stdin = sys.stdin
+    sys.stdout = sys.__stdout__
+    sys.stderr = sys.__stderr__
+    sys.stdin = sys.__stdin__
+    try:
+        yield
+    finally:
+        sys.stdout = stdout
+        sys.stderr = stderr
+        sys.stdin = stdin
+
+
 class Service(service.Service):
     """
     The Coba backup daemon.
@@ -323,6 +343,13 @@ class Service(service.Service):
         self._config = config
         self._observers = []
         self._init_logging()
+
+    def start(self, *args, **kwargs):
+        # `service.Service.start` crashes when `sys.stdout` doesn't have a
+        # `fileno` property. That happens, for example, during testing when
+        # the output is captured by the test framework.
+        with _original_streams():
+            super(Service, self).start(*args, **kwargs)
 
     def _init_logging(self):
         handler = logging.FileHandler(self._config.log_file, encoding='utf8')

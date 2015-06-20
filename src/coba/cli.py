@@ -266,7 +266,8 @@ def kill(ctx):
 
 @_command
 @click.argument('PATH', type=click.Path())
-@click.option('--hash', help='(Partial) revision hash')
+@click.option('--hash', help='Show only revisions whose hash starts with HASH',
+              metavar='HASH')
 def revs(ctx, path, hash):
     """
     List a file's revisions.
@@ -282,7 +283,7 @@ def revs(ctx, path, hash):
 @_command
 @click.argument('PATH', type=click.Path())
 @click.argument('TARGET', type=click.Path(), required=False)
-@click.option('--hash', required=True, help='Revision hash')
+@click.option('--hash', required=True, help='(Partial) revision hash')
 def restore(ctx, path, target, hash):
     """
     Restore a file to a previous revision.

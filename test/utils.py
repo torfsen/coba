@@ -92,7 +92,7 @@ class TempDirTest(object):
             'storage_dir': self.path('storage'),
             'idle_wait_time': 0,
             'pid_dir': self.temp_dir,
-            'watched_dirs': self.path('watch'),
+            'watched_dirs': [],
             'log_dir': self.path('logs'),
         }
 

@@ -41,6 +41,8 @@ import coba.cli
 from coba.config import Configuration
 from coba.utils import sha1
 
+from utils import TempDirTest
+
 
 def assert_matches(pattern, string):
     m = re.match(pattern, string)
@@ -48,34 +50,28 @@ def assert_matches(pattern, string):
         raise AssertionError('%r does not match %r.' % (pattern, string))
 
 
-class TestCobaCLI(object):
+# Pattern matching a single line of output from `coba revs ...`
+_REVS_LINE = r'[xrw-]{10} \w+ \w+ \d+ \d{4}-\d\d-\d\d \d\d:\d\d:\d\d (\w+)\n'
+
+class TestCobaCLI(TempDirTest):
     """
     Tests for ``coba.cli``.
     """
-    def path(self, p):
-        return os.path.join(self.temp_dir, p)
-
-    def setup(self):
-        self.temp_dir = tempfile.mkdtemp()
-
     def teardown(self):
         self.run('kill')
-        for root, filenames, dirnames in os.walk(self.temp_dir):
-            for filename in filenames:
-                fullname = os.path.join(root, filename)
-                os.chmod(fullname, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
-        shutil.rmtree(self.temp_dir)
+        os.chdir(self.old_dir)
+        super(TestCobaCLI, self).teardown()
+
+    def setup(self):
+        super(TestCobaCLI, self).setup()
+        self.mkdir('watch')
+        self.old_dir = os.getcwd()
+        os.chdir(self.path('watch'))
 
     def run(self, *args, **kwargs):
-        config_args = {
-            'storage_dir': self.path('storage'),
-            'idle_wait_time': 0,
-            'pid_dir': self.temp_dir,
-            'watched_dirs': [self.path('watch')],
-            'log_dir': self.path('logs'),
-        }
-        config_args.update(kwargs)
-        coba.cli._config = Configuration(**config_args)
+        self.config_args.update(kwargs)
+        self.config_args['watched_dirs'] = [self.path('watch')]
+        coba.cli._config = Configuration(**self.config_args)
         runner = CliRunner()
         result = runner.invoke(coba.cli.main, args)
         # Fix for Click issue #362
@@ -88,31 +84,111 @@ class TestCobaCLI(object):
             exit_code = 1
         return exit_code, output
 
+    def start(self):
+        self.run('start')
+        time.sleep(1)
+
     def test_status_not_running(self):
         code, output = self.run('status')
-        eq(code, 1)
         eq(output, 'The backup daemon is not running.\n')
+        eq(code, 1)
 
     def test_status_running(self):
-        self.run('start')
-        time.sleep(1)
+        self.start()
         code, output = self.run('status')
-        eq(code, 0)
         eq(output, 'The backup daemon is running.\n')
+        eq(code, 0)
 
     def test_status_running_verbose(self):
-        self.run('start')
-        time.sleep(1)
+        self.start()
         code, output = self.run('-v', 'status')
-        eq(code, 0)
         assert_matches('The backup daemon is running.\nDaemon PID is \\d+.\n',
                        output)
+        eq(code, 0)
 
     def test_start_already_running(self):
-        self.run('start')
-        time.sleep(1)
+        self.start()
         code, output = self.run('start')
-        eq(code, 1)
         assert_matches('Error: Daemon is already running at PID \\d+.\n',
                        output)
+        eq(code, 1)
+
+    def test_stop_running(self):
+        self.start()
+        code, output = self.run('stop')
+        time.sleep(1)
+        eq(output, '')
+        eq(code, 0)
+
+    def test_stop_not_running(self):
+        code, output = self.run('stop')
+        eq(output, 'Error: Daemon is not running.\n')
+        eq(code, 1)
+
+    def test_revs(self):
+        self.start()
+        code, output = self.run('revs', 'foo')
+        eq(output, '')
+        eq(code, 0)
+        code, output = self.run('-v', 'revs', 'foo')
+        assert_matches(r'No revisions for ".*".\n', output)
+        eq(code, 0)
+        self.write('watch/foo', 'foo')
+        time.sleep(1)
+        code, output = self.run('revs', 'foo')
+        assert_matches(_REVS_LINE, output)
+        first_line = output
+        eq(code, 0)
+        self.write('watch/foo', 'bar')
+        time.sleep(1)
+        code, output = self.run('revs', 'foo')
+        m = re.match(_REVS_LINE + _REVS_LINE, output)
+        ok(m)
+        eq(code, 0)
+        hash = m.groups()[0]
+        code, output = self.run('revs', '--hash', hash[:5], 'foo')
+        eq(output, first_line)
+        eq(code, 0)
+
+    def test_restore(self):
+        self.start()
+        self.write('watch/foo', 'foo')
+        time.sleep(1)
+        self.write('watch/foo', 'bar')
+        time.sleep(1)
+        code, output = self.run('revs', 'foo')
+        m = re.match(_REVS_LINE + _REVS_LINE, output)
+        ok(m)
+        eq(code, 0)
+        hash = m.groups()[0]
+        code, output = self.run('restore', '--hash', hash[:5], 'foo')
+        eq(output, '')
+        eq(code, 0)
+        eq(self.read('watch/foo'), 'foo')
+        self.write('watch/foo', 'bar')
+        code, output = self.run('-v', 'restore', '--hash', hash[:5], 'foo')
+        assert_matches(r'Restored content of ".*/foo" from revision ".*".',
+                       output)
+        eq(code, 0)
+        eq(self.read('watch/foo'), 'foo')
+        code, output = self.run('restore', '--hash', hash[:5], 'foo', 'bar')
+        eq(output, '')
+        eq(code, 0)
+        eq(self.read('watch/bar'), 'foo')
+        code, output = self.run('-v', 'restore', '--hash', hash[:5], 'foo',
+                                'baz')
+        assert_matches(r'Restored content of ".*/foo" from revision ".*" ' +
+                       'to ".*/baz".', output)
+        eq(code, 0)
+        eq(self.read('watch/baz'), 'foo')
+
+    def test_log(self):
+        self.start()
+        code, output = self.run('log')
+        ok(output)
+        eq(code, 0)
+        code, output = self.run('log', '--lines', 2)
+        ok(output)
+        eq(len(output.split('\n')), 3)
+        eq(code, 0)
 
