@@ -27,8 +27,6 @@ Data stores based on LibCloud_ storage.
 .. _LibCloud: https://libcloud.apache.org
 """
 
-import collections
-import cStringIO
 import json
 import gzip
 import hashlib
@@ -37,18 +35,13 @@ import tempfile
 import libcloud.storage.types
 import libcloud.storage.drivers.local
 
-from .utils import binary_file_iterator, make_dirs, normalize_path
+from . import Revision
+from .utils import binary_file_iterator, make_dirs, normalize_path, to_json
 
 
 __all__ = [
-    'AbstractStore',
-    'BlobStore',
-    'CompressAndHashTransformer',
     'local_storage_driver',
-    'PathStore',
-    'StringStore',
-    'Transformer',
-    'TransformingStore',
+    'RevisionStore',
 ]
 
 
@@ -76,12 +69,11 @@ def _download_to_temp_file(container, objname):
     return temp_file
 
 
-def _upload_from_file(container, objname, fobj):
+def _upload_from_file(container, objname, f):
     """
     Upload file content to a LibCloud object.
     """
-    fobj.seek(0)
-    iterator = binary_file_iterator(fobj)
+    iterator = binary_file_iterator(f)
     container.upload_object_via_stream(iterator, objname)
 
 
@@ -99,283 +91,153 @@ def local_storage_driver(path):
     return libcloud.storage.drivers.local.LocalStorageDriver(path)
 
 
-class Transformer(object):
+def _hash_and_compress(f, block_size=2**20):
     """
-    Base class for key/value transformers.
+    Hash and compress a file's content.
 
-    A transformer transforms data before it is uploaded to a cloud
-    store and inverts the transformation when the data is retrieved
-    again.
-
-    During upload, transformers may transform the key, too, while
-    during downloads only the value transformation is inverted. This
-    allows transformers to provide a key based on the transformed
-    content (see, for example, :py:class:`CompressAndHashTransformer`).
+    The content of the open file-like object ``f`` is read, hashed,
+    and compressed in a temporary file. The uncompressed content's hash
+    and the open temporary file are returned. Note that the temporary
+    file is automatically deleted once its handle is closed.
     """
-    def transform(self, key, value):
-        """
-        Transform a key/value pair.
-
-        Returns the transformed pair.
-        """
-        return key, value
-
-    def invert(self, value):
-        """
-        Invert a value transformation.
-
-        Returns the original value.
-        """
-        return value
+    hasher = hashlib.sha1()
+    temp_file = tempfile.TemporaryFile()
+    with gzip.GzipFile(filename='', fileobj=temp_file, mode='wb') as gzip_file:
+        while True:
+            block = f.read(block_size)
+            if not block:
+                break
+            hasher.update(block)
+            gzip_file.write(block)
+    temp_file.seek(0)
+    return hasher.hexdigest(), temp_file
 
 
-class CompressAndHashTransformer(Transformer):
+class _AutoCloseGzipFile(gzip.GzipFile):
     """
-    Takes a file and turns it into a compressed file. The key is
-    replaced by the data's hashsum.
+    Like ``gzip.GzipFile``, but automatically closes the underlying file.
     """
-    def __init__(self, block_size=2**20):  # flake8: noqa
-        super(Transformer, self).__init__()
-        self.block_size = block_size
-
-    def transform(self, key, value):
-        hasher = hashlib.sha256()
-        temp_file = tempfile.TemporaryFile()
-        value.seek(0)
-        with gzip.GzipFile(filename='', fileobj=temp_file,
-                           mode='wb') as gzip_file:
-            while True:
-                block = value.read(self.block_size)
-                if not block:
-                    break
-                hasher.update(block)
-                gzip_file.write(block)
-        temp_file.seek(0)
-        return hasher.hexdigest(), temp_file
-
-    def invert(self, value):
-        value.seek(0)
-        return gzip.GzipFile(filename='', fileobj=value, mode='rb')
-
-_undefined = object()
+    def close(self):
+        fileobj = self.fileobj
+        super(_AutoCloseGzipFile, self).close()
+        if fileobj:
+            fileobj.close()
 
 
-class AbstractStore(collections.Mapping):
+class RevisionStore(object):
     """
-    Abstract data store for LibCloud storage.
+    Store for revision content and meta-data.
     """
+    META_PREFIX = 'meta'
+    BLOB_PREFIX = 'blobs'
+
     def __init__(self, driver, container_name):
-        """
-        Constructor.
-
-        ``driver`` is a LibCloud storage driver. ``container_name`` is
-        the name of the container to use. If the container does not
-        exist it is created.
-        """
         self._container = _get_container(driver, container_name)
 
-    def get(self, key, default=_undefined):
+    def _path2key(self, path):
         """
-        Retrieve data from the store.
+        Create meta-data key from file path.
+        """
+        path = str(normalize_path(path))
+        assert path.startswith('/')
+        return self.META_PREFIX + path
 
-        If no entry for the given key exists a :py:class:`KeyError` is
-        raised unless ``default`` is provided, in which case that value
-        is returned instead.
+    def _hash2key(self, hash):
         """
+        Create blob key from content hash.
+        """
+        return self.BLOB_PREFIX + '/' + hash
+
+    def get_revisions(self, path):
+        """
+        Returns a path's revisions.
+        """
+        key = self._path2key(path)
         try:
-            return self[key]
+            data = json.loads(self._get_string(key))
         except KeyError:
-            if default is _undefined:
-                raise
-            return default
+            return []
+        path = data['path']
+        return [Revision(self, path=path, **d) for d in data['revisions']]
 
-    def _get(self, key):
+    def set_revisions(self, path, revisions):
         """
-        Internal data retrieval.
+        Set a path's revisions.
 
-        Subclasses need to overwrite this with the actual data
-        retrieval code. ``get`` is a simple wrapper around ``_get``
-        and just adds the handling of default values.
+        ``revisions`` is a list of :py:class:`Revision` instances for
+        the given path.
         """
-        raise NotImplementedError()
+        path = str(normalize_path(path))
+        key = self._path2key(path)
+        data = {
+            'path': path,
+            'revisions': revisions,
+        }
+        self._put_string(key, to_json(data))
 
-    def remove(self, key):
+    def append_revision(self, path, *args, **kwargs):
         """
-        Remove an entry from the store.
+        Create a new revision for a path.
+
+        Creates a new instance of :py:class:`Revision` for the given
+        path. All arguments are passed on to the :py:class:`Revision`
+        constructor. The revision is stored and returned.
+
+        The revision's content blob must be stored separately using
+        :py:meth:`put_content`.
         """
+        revision = Revision(self, path, *args, **kwargs)
+        revisions = self.get_revisions(path)
+        revisions.append(revision)
+        self.set_revisions(path, revisions)
+        return revision
+
+    def put_content(self, f):
+        """
+        Store content from a file.
+
+        ``f`` is an open file-like object. Its content is read, hashed,
+        compressed, and stored. The return value is the hash which can
+        then be used to retrieve the data again using
+        :py:meth:`get_content`.
+        """
+        hash, compressed_file = _hash_and_compress(f)
+        key = self._hash2key(hash)
+        _upload_from_file(self._container, key, compressed_file)
+        return hash
+
+    def get_content(self, hash):
+        """
+        Retrieve content.
+
+        Returns the uncompressed content stored at the given hash in
+        the form of an open file handle to a temporary file. The
+        temporary file is automatically deleted when the file handle
+        is closed.
+
+        If no content for the given hash can be found a ``KeyError`` is
+        raised.
+        """
+        key = self._hash2key(hash)
         try:
-            obj = self._container.get_object(key)
+            temp_file = _download_to_temp_file(self._container, key)
         except libcloud.storage.types.ObjectDoesNotExistError:
-            raise KeyError(key)
-        self._container.delete_object(obj)
+            raise KeyError(hash)
+        return _AutoCloseGzipFile(filename='', fileobj=temp_file, mode='rb')
 
-    def clear(self):
+    def _get_string(self, key):
         """
-        Remove all entries from the store.
+        Get a raw string from the store.
         """
-        for obj in self._container.list_objects():
-            self._container.delete_object(obj)
-
-    def __getitem__(self, key):
-        return self._get(key)
-
-    def __delitem__(self, key):
-        return self.remove(key)
-
-    def __iter__(self):
-        for obj in self._container.list_objects():
-            yield obj.name
-
-    def __len__(self):
-        return len(self._container.list_objects())
-
-
-class StringStore(AbstractStore):
-    """
-    Store for storing plain strings.
-    """
-    def put(self, key, value):
-        self._container.upload_object_via_stream(value, key)
-        return key
-
-    __setitem__ = put
-
-    def _get(self, key):
         try:
             obj = self._container.get_object(key)
         except libcloud.storage.types.ObjectDoesNotExistError:
             raise KeyError(key)
         return ''.join(obj.as_stream())
 
-
-class TransformingStore(AbstractStore):
-    """
-    Cloud storage data store with built-in value transformations.
-
-    This class automatically transforms values during up- and download
-    based on a :py:class:`Transformer` instance.
-    """
-    def __init__(self, driver, container_name, transformer):
+    def _put_string(self, key, value):
         """
-        Constructor.
-
-        ``transformer`` is an instance of :py:class:`Transformer` which
-        must return an open file-like object during the upload
-        transformation.
+        Put a raw string into the store.
         """
-        super(TransformingStore, self).__init__(driver, container_name)
-        self._transformer = transformer
-
-    def _get(self, key):
-        """
-        Download data from the store.
-
-        The transformation performed during the upload is automatically
-        inverted.
-        """
-        try:
-            temp_file = _download_to_temp_file(self._container, key)
-        except libcloud.storage.types.ObjectDoesNotExistError:
-            raise KeyError(key)
-        return self._transformer.invert(temp_file)
-
-    def _put(self, key, value):
-        """
-        Upload data to the store.
-
-        The key/value pair is automatically transformed. The
-        transformed value is stored in the cloud storage using the
-        transformed key. The latter is returned to allow for retrieval
-        of the data later on.
-        """
-        key, value = self._transformer.transform(key, value)
-        _upload_from_file(self._container, key, value)
-        return key
-
-
-class BlobStore(TransformingStore):
-    """
-    A blob store.
-
-    This blob store allows you to store arbitrary data using a LibCloud
-    storage driver. Data blobs are identified by their hash, which is
-    computed when data is stored and can then be used to retrieve the
-    data at a later point.
-    """
-    def __init__(self, driver, container_name):
-        super(BlobStore, self).__init__(driver, container_name,
-                                        CompressAndHashTransformer())
-
-    def put(self, data):
-        """
-        Store content in the blob store.
-
-        ``data`` can either be a string or an open file-like object.
-        Its content is stored in the blob store in compressed form and
-        the content's hash is returned. The hash can later be used to
-        retrieve the data from the blob store.
-        """
-        if not hasattr(data, 'read'):
-            # Not a file, assume string
-            data = cStringIO.StringIO(data)
-        return super(BlobStore, self)._put(None, data)
-
-    def get_file(self, hashsum):
-        """
-        Retrieve data from the blob store in the form of a file-object.
-
-        Returns data that was previously stored via ``put``. The return
-        value is a :py:class:`gzip.GzipFile` instance which behaves
-        like a standard Python file object and performs the
-        decompression.
-        """
-        return super(BlobStore, self)._get(hashsum)
-
-    def _get(self, hashsum):
-        return super(BlobStore, self)._get(hashsum).read()
-
-    def __setitem__(self, key, value):
-        raise TypeError('Indexed writing is not possible. Use "put".')
-
-
-class PathStore(StringStore):
-    """
-    Store for storing plain strings with support for paths as keys.
-
-    This is basically a :py:class:`StringStore` but with additional
-    plumbing to allow for paths to be used as keys.
-    """
-    def _path2key(self, path):
-        """
-        Convert a path to a key.
-        """
-        path = str(normalize_path(path))
-        assert path.startswith('/')
-        # We need to return the leading slash from the path to fake a
-        # relative path. Absolute paths are buggy or not supported in
-        # many LibCloud storage drivers.
-        return path[1:]
-
-    def _key2path(self, key):
-        """
-        Convert a key to a path.
-        """
-        return '/' + key
-
-    def put(self, path, value):
-        key = self._path2key(path)
-        super(PathStore, self).put(key, value)
-        return path
-
-    __setitem__ = put
-
-    def _get(self, path):
-        return super(PathStore, self)._get(self._path2key(path))
-
-    def remove(self, path):
-        return super(PathStore, self).remove(self._path2key(path))
-
-    def __iter__(self):
-        for obj in self._container.list_objects():
-            yield self._key2path(obj.name)
+        self._container.upload_object_via_stream(value, key)
 

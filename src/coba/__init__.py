@@ -29,7 +29,6 @@ import codecs
 import collections
 import datetime
 import grp
-import json
 import os
 import pwd
 import stat
@@ -38,8 +37,7 @@ import time
 import pathlib
 
 from .config import Configuration
-from .stores import BlobStore, local_storage_driver, PathStore
-from .utils import make_dirs, normalize_path, sha1, tail
+from .utils import make_dirs, normalize_path, sha1, tail, to_json
 from .watch import Service
 from .warnings import (GroupMismatchWarning, NoSuchGroupWarning,
                        NoSuchUserWarning, UserMismatchWarning, warn)
@@ -47,16 +45,6 @@ from .warnings import (GroupMismatchWarning, NoSuchGroupWarning,
 __version__ = '0.1.0'
 
 __all__ = ['Coba', 'File', 'Revision']
-
-
-class _JSONEncoder(json.JSONEncoder):
-    """
-    JSON encoder for file information classes.
-    """
-    def default(self, obj):
-        if isinstance(obj, Revision):
-            return obj._to_json()
-        return super(_JSONEncoder, self).default(obj)
 
 
 class File(object):
@@ -78,24 +66,13 @@ class File(object):
         self._coba = coba
         self.path = normalize_path(path)
 
-    def _object_hook(self, d):
-        """
-        JSON object hook.
-        """
-        return Revision(store=self._coba._blob_store, path=self.path, **d)
-
     def get_revisions(self):
         """
         Get the file's revisions.
 
-        Returns a list of the file's revisions as instances of
-        :py:class:`Revision`.
+        Returns a list of the file's revisions.
         """
-        try:
-            s = self._coba._info_store[str(self.path)]
-        except KeyError:
-            return []
-        return json.loads(s, object_hook=self._object_hook)
+        return self._coba.store.get_revisions(self.path)
 
     def is_ignored(self):
         """
@@ -103,43 +80,27 @@ class File(object):
         """
         return self._coba.config.is_ignored(self.path)
 
-    def _set_revisions(self, revisions):
-        """
-        Set the file's revisions.
-
-        ``revisions`` is a list of instances of :py:meth:`Revision`.
-        """
-        self._coba._info_store[str(self.path)] = json.dumps(
-            revisions, separators=(',', ':'), cls=_JSONEncoder)
-
     def backup(self):
         """
         Create a new revision.
 
-        The current content of the file is stored in the storage. The
-        corresponding revision is returned as an instance of
-        :py:class:`Revision`.
+        The current content of the file is stored and the corresponding
+        revision is returned as an instance of :py:class:`Revision`.
         """
-
         with self.path.open('rb') as f:
-            content_hash = self._coba._blob_store.put(f)
-        try:
-            stats = self.path.stat()
-            user_name = pwd.getpwuid(stats.st_uid).pw_name
-            group_name = grp.getgrgid(stats.st_gid).gr_name
-            revisions = self.get_revisions()
-            revision = Revision(self._coba._blob_store, self.path, time.time(),
-                                content_hash, stats.st_mtime, stats.st_uid,
-                                user_name, stats.st_gid, group_name,
-                                stat.S_IMODE(stats.st_mode), stats.st_size)
-            revisions.append(revision)
-            self._set_revisions(revisions)
-            return revision
-        except:
-            # FIXME: We must not do this, since the same content could
-            # be referred to by a different revision.
-            self._coba._blob_store.remove(content_hash)
-            raise
+            content_hash = self._coba.store.put_content(f)
+        stats = self.path.stat()
+        return self._coba.store.append_revision(
+            path=self.path,
+            timestamp=time.time(),
+            content_hash=content_hash,
+            mtime=stats.st_mtime,
+            user_id=stats.st_uid,
+            user_name=pwd.getpwuid(stats.st_uid).pw_name,
+            group_id=stats.st_gid,
+            group_name=grp.getgrgid(stats.st_gid).gr_name,
+            mode=stat.S_IMODE(stats.st_mode),
+            size=stats.st_size)
 
     def filter_revisions(self, hash=None, unique=False):
         """
@@ -179,7 +140,8 @@ class Revision(object):
 
     .. py:attribute:: store
 
-        The :py:class:`Store` instance which contains the revision.
+        The :py:class:`RevisionStore` instance which contains the
+        revision.
 
     .. py:attribute:: path
 
@@ -313,7 +275,7 @@ class Revision(object):
 
         ``target`` is a :py:class:`pathlib.Path` instance.
         """
-        with self.store.get_file(self.content_hash) as in_file:
+        with self.store.get_content(self.content_hash) as in_file:
             with target.open('wb') as out_file:
                 while True:
                     block = in_file.read(block_size)
@@ -382,7 +344,7 @@ class Revision(object):
             raise ValueError('Illegal value for input argument "group".')
 
     def __repr__(self):
-        p = str(self.file.path)
+        p = str(self.path)
         d = datetime.datetime.fromtimestamp(self.timestamp).isoformat(' ')
         return "%s(%r, '%s')" % (self.__class__.__name__, p, d)
 
@@ -401,7 +363,7 @@ class Revision(object):
         The hash uniquely identifies the revision among all revisions of
         the same file.
         """
-        return sha1(json.dumps(self, separators=(',', ':'), cls=_JSONEncoder))
+        return sha1(to_json(self))
 
 
 class Coba(object):
@@ -420,12 +382,12 @@ class Coba(object):
         location (``~/.coba/.config.json``) if that file exists.
         Otherwise the default configuration is used.
         """
+        from .stores import local_storage_driver, RevisionStore
         self.config = config or Configuration.load()
         make_dirs(self.config.log_dir)
         make_dirs(self.config.pid_dir)
         driver = local_storage_driver(self.config.storage_dir)
-        self._blob_store = BlobStore(driver, 'coba-blobs')
-        self._info_store = PathStore(driver, 'coba-info')
+        self.store = RevisionStore(driver, 'coba')
 
         def backup(path):
             self.file(path).backup()
@@ -479,16 +441,6 @@ class Coba(object):
         Returns the PID or ``None`` if the backup daemon is not running.
         """
         return self.service.get_pid()
-
-    def files(self):
-        """
-        List stored files.
-
-        This generator yields all files in the storage as instances of
-        :py:class:`File`.
-        """
-        for path in self._info_store:
-            yield File(self, path)
 
     def file(self, path):
         """

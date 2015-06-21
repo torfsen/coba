@@ -26,67 +26,58 @@ Tests for ``coba.stores``.
 """
 
 import cStringIO
-import hashlib
 import shutil
 import tempfile
+import time
 
-from nose.tools import eq_ as eq, ok_ as ok
+from nose.tools import eq_ as eq, ok_ as ok, raises
 
+from coba import Revision
 from coba.stores import *
-
-_unique = object()
-
-_TEXT = "FOO BAR" * 100
-_DATA = {'foo':1, 'bar':'boom', 'bazinga':[1, 2, 3]}
+from coba.utils import sha1
 
 
-def test_CompressAndHashTransformer():
-    t = CompressAndHashTransformer()
-    hashsum = hashlib.sha256(_TEXT).hexdigest()
-    data = cStringIO.StringIO(_TEXT)
-    key, compressed_file = t.transform(None, data)
-    compressed_data = compressed_file.read()
-    compressed_file.seek(0)
-    ok(len(_TEXT) > len(compressed_data))
-    eq(key, hashsum)
-    uncompressed_file = t.invert(compressed_file)
-    eq(_TEXT, uncompressed_file.read())
+def _fake_revision(store, path):
+    return Revision(store, path, time.time(), 1, 2, 3, 4, 5, 6, 7, 8)
 
 
-class StoreTestCase(object):
+class TestRevisionStore(object):
     """
-    Test case which provides a store based on a local temporary
-    LibCloud storage driver.
+    Tests for ``coba.stores.RevisionStore``.
     """
-
-    _STORE_CLASS = None
-
     def setup(self):
         self.path = tempfile.mkdtemp()
         self.driver = local_storage_driver(self.path)
-        self.store = self._STORE_CLASS(self.driver, 'container')
+        self.store = RevisionStore(self.driver, 'container')
 
     def teardown(self):
         shutil.rmtree(self.path, ignore_errors=True)
 
+    def test_set_get_append_revisions(self):
+        """
+        Test setting, getting and appending revisions.
+        """
+        p = '/foo/bar'
+        eq(self.store.get_revisions(p), [])
+        rev1 = _fake_revision(self.store, p)
+        rev2 = _fake_revision(self.store, p)
+        self.store.set_revisions(p, [rev1, rev2])
+        revs = self.store.get_revisions(p)
+        eq(revs, [rev1, rev2])
+        rev3 = self.store.append_revision(p, time.time(), 1, 2, 3, 4, 5, 6, 7, 8)
+        revs = self.store.get_revisions(p)
+        eq(revs, [rev1, rev2, rev3])
 
-class test_BlobStore(StoreTestCase):
+    def test_put_get_content(self):
+        """
+        Test storing and retrieving content.
+        """
+        content = 'foobar'
+        hash = self.store.put_content(cStringIO.StringIO(content))
+        eq(hash, sha1(content))
+        eq(self.store.get_content(hash).read(), content)
 
-    _STORE_CLASS = BlobStore
-
-    def test_put(self):
-        hashsum = hashlib.sha256(_TEXT).hexdigest()
-        data = cStringIO.StringIO(_TEXT)
-        key = self.store.put(data)
-        eq(key, hashsum)
-
-    def test_get(self):
-        data = cStringIO.StringIO(_TEXT)
-        key = self.store.put(data)
-        eq(self.store.get(key), _TEXT)
-
-    def test_get_file(self):
-        data = cStringIO.StringIO(_TEXT)
-        key = self.store.put(data)
-        eq(self.store.get_file(key).read(), _TEXT)
+    @raises(KeyError)
+    def get_content_keyerror(self):
+        self.store.get_content('does not exist')
 

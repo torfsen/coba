@@ -32,6 +32,7 @@ Various utilities.
 
 import errno
 import hashlib
+import json
 import mmap
 import os
 import os.path
@@ -46,11 +47,13 @@ __all__ = [
     'expand_path',
     'filemode',
     'is_in_dir',
+    'JSONEncoder',
     'make_dirs',
     'match_path',
     'normalize_path',
     'sha1',
     'tail',
+    'to_json',
 ]
 
 
@@ -273,4 +276,30 @@ def tail(f, n=10):
         return lines
     finally:
         mm.close()
+
+
+class JSONEncoder(json.JSONEncoder):
+    """
+    General JSON encoder.
+
+    This encoder tries to call ``obj._to_json`` on objects it is told
+    to encode. It is assumed that this method returns a view of ``obj``
+    that can be encoded to JSON by ``json.JSONEncoder``.
+    """
+    def default(self, obj):
+        try:
+            return obj._to_json()
+        except AttributeError:
+            pass
+        return super(JSONEncoder, self).default(obj)
+
+
+def to_json(obj):
+    """
+    Compact JSON string representation of an object.
+
+    Uses :py:class:`JSONEncoder` to create a compact JSON string
+    representation of the given object.
+    """
+    return json.dumps(obj, separators=(',', ':'), cls=JSONEncoder)
 

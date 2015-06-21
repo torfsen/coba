@@ -171,3 +171,19 @@ def test_tail():
     ]:
         yield check, content, expected
 
+
+#
+# Tests for ``JSONEncoder``
+#
+
+def test_jsonencoder():
+    assert False
+
+
+#
+# Tests for ``to_json``
+#
+
+def test_to_json():
+    assert False
+
