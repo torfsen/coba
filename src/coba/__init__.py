@@ -365,6 +365,25 @@ class Revision(object):
         """
         return sha1(to_json(self))
 
+    def __eq__(self, other):
+        """
+        Two revisions are considered equal if all of their members except
+        ``store`` are equal.
+        """
+        if not isinstance(other, self.__class__):
+            return NotImplemented
+        for k, v in self.__dict__.iteritems():
+            if k != 'store' and v != getattr(other, k):
+                return False
+        return True
+
+    def __ne__(self, other):
+        return not (self == other)
+
+    def __hash__(self):
+        return hash(tuple(sorted((k, v) for k, v in self.__dict__.iteritems()
+                    if k != 'store')))
+
 
 class Coba(object):
     """

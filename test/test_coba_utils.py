@@ -173,17 +173,32 @@ def test_tail():
 
 
 #
-# Tests for ``JSONEncoder``
-#
-
-def test_jsonencoder():
-    assert False
-
-
-#
 # Tests for ``to_json``
 #
 
-def test_to_json():
-    assert False
+class _ClassWithJSONSupport(object):
+    def _to_json(self):
+        return 1
+
+
+def test_to_json_obj_with_support():
+    """
+    Test that ``to_json`` can encode objects with ``_to_json``.
+    """
+    eq(to_json(_ClassWithJSONSupport()), '1')
+
+
+@raises(TypeError)
+def test_to_json_obj_no_support():
+    """
+    Test that ``to_json`` fails for objects without ``_to_json``.
+    """
+    to_json(object())
+
+
+def test_to_json_compact():
+    """
+    Test that ``to_json`` returns a compact encoding.
+    """
+    eq(to_json({1 : [2, 3]}), '{"1":[2,3]}')
 

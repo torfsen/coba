@@ -47,7 +47,6 @@ __all__ = [
     'expand_path',
     'filemode',
     'is_in_dir',
-    'JSONEncoder',
     'make_dirs',
     'match_path',
     'normalize_path',
@@ -278,7 +277,7 @@ def tail(f, n=10):
         mm.close()
 
 
-class JSONEncoder(json.JSONEncoder):
+class _JSONEncoder(json.JSONEncoder):
     """
     General JSON encoder.
 
@@ -291,15 +290,17 @@ class JSONEncoder(json.JSONEncoder):
             return obj._to_json()
         except AttributeError:
             pass
-        return super(JSONEncoder, self).default(obj)
+        return super(_JSONEncoder, self).default(obj)
 
 
 def to_json(obj):
     """
     Compact JSON string representation of an object.
 
-    Uses :py:class:`JSONEncoder` to create a compact JSON string
-    representation of the given object.
+    Any object referenced by ``obj`` which cannot be encoded by
+    :py:func:`json.dumps` is expected to provide a ``_to_json`` method
+    which returns a view of the object that can be encoded by
+    :py:func:`json.dumps`.
     """
-    return json.dumps(obj, separators=(',', ':'), cls=JSONEncoder)
+    return json.dumps(obj, separators=(',', ':'), cls=_JSONEncoder)
 

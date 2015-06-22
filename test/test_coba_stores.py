@@ -78,6 +78,6 @@ class TestRevisionStore(object):
         eq(self.store.get_content(hash).read(), content)
 
     @raises(KeyError)
-    def get_content_keyerror(self):
+    def test_get_content_keyerror(self):
         self.store.get_content('does not exist')
 
