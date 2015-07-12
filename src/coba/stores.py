@@ -27,9 +27,11 @@ Data stores based on LibCloud_ storage.
 .. _LibCloud: https://libcloud.apache.org
 """
 
+import binascii
 import json
 import gzip
 import hashlib
+import os
 import tempfile
 
 import libcloud.storage.types
@@ -37,22 +39,13 @@ import libcloud.storage.drivers.local
 
 from . import Revision
 from .utils import binary_file_iterator, make_dirs, normalize_path, to_json
+from .compat import pbkdf2_hmac
 
 
 __all__ = [
     'local_storage_driver',
-    'RevisionStore',
+    'Store',
 ]
-
-
-def _get_container(driver, name):
-    """
-    Get a container, create it if necessary.
-    """
-    try:
-        return driver.get_container(name)
-    except libcloud.storage.types.ContainerDoesNotExistError:
-        return driver.create_container(name)
 
 
 def _download_to_temp_file(container, objname):
@@ -77,20 +70,6 @@ def _upload_from_file(container, objname, f):
     container.upload_object_via_stream(iterator, objname)
 
 
-def local_storage_driver(path):
-    """
-    Create a local LibCloud storage driver.
-
-    ``path`` is the directory in which the data is stored. It is
-    automatically created if it does not exist.
-
-    Returns an instance of
-    :py:class:`libcloud.storage.drivers.local.LocalStorageDriver`.
-    """
-    make_dirs(path)
-    return libcloud.storage.drivers.local.LocalStorageDriver(path)
-
-
 def _hash_and_compress(f, block_size=2**20):
     """
     Hash and compress a file's content.
@@ -113,6 +92,16 @@ def _hash_and_compress(f, block_size=2**20):
     return hasher.hexdigest(), temp_file
 
 
+def _make_salt():
+    """
+    Create a cryptographically secure salt string.
+
+    Returns a Unicode string containing 64 secure random bytes encoded
+    as a hex string.
+    """
+    return unicode(binascii.hexlify(os.urandom(64)))
+
+
 class _AutoCloseGzipFile(gzip.GzipFile):
     """
     Like ``gzip.GzipFile``, but automatically closes the underlying file.
@@ -124,29 +113,116 @@ class _AutoCloseGzipFile(gzip.GzipFile):
             fileobj.close()
 
 
-class RevisionStore(object):
+class Store(object):
     """
     Store for revision content and meta-data.
     """
-    META_PREFIX = 'meta'
-    BLOB_PREFIX = 'blobs'
+    _FORMAT_VERSION = 1
+    _SETTINGS_PREFIX  = 'settings'
+    _META_PREFIX = 'meta'
+    _BLOB_PREFIX = 'blobs'
+    _HASH_ALGO = 'sha256'
+    _HASH_ROUNDS = 100000
 
     def __init__(self, driver, container_name):
-        self._container = _get_container(driver, container_name)
+        """
+        Constructor.
+
+        ``driver`` is a :py:class:`libcloud.storage.base.StorageDriver`
+        instance and ``container_name`` is the name of the container to
+        use for the store. If the container exists the store contained
+        in it will be loaded (if the container doesn't contain a valid
+        store then an exception is thrown). If the container does not
+        exist then it is created and a new store is initialized in it.
+        """
+        try:
+            self._load_store(driver, container_name)
+        except libcloud.storage.types.ContainerDoesNotExistError:
+            self._create_store(driver, container_name)
+
+    @property
+    def salt(self):
+        """
+        The salt used for hashing paths.
+        """
+        return self._salt
+
+    @property
+    def format_version(self):
+        """
+        The storage format version used by the store.
+        """
+        return self._format_version
+
+    def _create_store(self, driver, container_name):
+        """
+        Create and initialize store in a LibCloud container.
+        """
+        self._container = driver.create_container(container_name)
+        self._salt = self._set_setting('salt', _make_salt())
+        self._format_version = self._set_setting(
+            'format_version', self._FORMAT_VERSION)
+
+    def _load_store(self, driver, container_name):
+        """
+        Load existing store in a LibCloud container.
+        """
+        self._container = driver.get_container(container_name)
+        self._format_version = self._get_setting('format_version')
+        if self._format_version > self._FORMAT_VERSION:
+            raise ValueError('Store uses the storage format version %d ' +
+                             'which is from a newer version of Coba and ' +
+                             'not supported in this version.' %
+                             self._format_version)
+        self._salt = self._get_setting('salt')
+
+    def _hash(self, s):
+        """
+        Hash a string using a cryptographically secure hash function.
+
+        Returns a Unicode string with the hash encoded as a hex string.
+        """
+        h = pbkdf2_hmac(self._HASH_ALGO, s, self._salt, self._HASH_ROUNDS)
+        return unicode(binascii.hexlify(h))
 
     def _path2key(self, path):
         """
         Create meta-data key from file path.
         """
         path = str(normalize_path(path))
-        assert path.startswith('/')
-        return self.META_PREFIX + path
+        return self._META_PREFIX + '/' + self._hash(path)
 
     def _hash2key(self, hash):
         """
         Create blob key from content hash.
         """
-        return self.BLOB_PREFIX + '/' + hash
+        return self._BLOB_PREFIX + '/' + hash
+
+    def _setting2key(self, setting):
+        """
+        Create settings key from settings name.
+        """
+        return self._SETTINGS_PREFIX + '/' + setting
+
+    def _set_setting(self, name, value):
+        """
+        Store a setting in the store.
+
+        Returns the setting's value.
+        """
+        self._put_json(self._setting2key(name), value)
+        return value
+
+    def _get_setting(self, name):
+        """
+        Get a setting from the store.
+
+        Raises a :py:class:`KeyError` if the setting does not exist.
+        """
+        try:
+            return self._get_json(self._setting2key(name))
+        except KeyError:
+            raise KeyError(name)
 
     def get_revisions(self, path):
         """
@@ -154,7 +230,7 @@ class RevisionStore(object):
         """
         key = self._path2key(path)
         try:
-            data = json.loads(self._get_string(key))
+            data = self._get_json(key)
         except KeyError:
             return []
         path = data['path']
@@ -173,7 +249,7 @@ class RevisionStore(object):
             'path': path,
             'revisions': revisions,
         }
-        self._put_string(key, to_json(data))
+        self._put_json(key, data)
 
     def append_revision(self, path, *args, **kwargs):
         """
@@ -241,3 +317,28 @@ class RevisionStore(object):
         """
         self._container.upload_object_via_stream(value, key)
 
+    def _put_json(self, key, value):
+        """
+        Encode data to JSON and store it.
+        """
+        self._put_string(key, to_json(value))
+
+    def _get_json(self, key):
+        """
+        Get JSON data and decode it.
+        """
+        return json.loads(self._get_string(key))
+
+
+def local_storage_driver(path):
+    """
+    Create a local LibCloud storage driver.
+
+    ``path`` is the directory in which the data is stored. It is
+    automatically created if it does not exist.
+
+    Returns an instance of
+    :py:class:`libcloud.storage.drivers.local.LocalStorageDriver`.
+    """
+    make_dirs(path)
+    return libcloud.storage.drivers.local.LocalStorageDriver(path)

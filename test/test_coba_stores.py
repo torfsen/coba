@@ -26,6 +26,7 @@ Tests for ``coba.stores``.
 """
 
 import cStringIO
+import os
 import shutil
 import tempfile
 import time
@@ -43,12 +44,12 @@ def _fake_revision(store, path):
 
 class TestRevisionStore(object):
     """
-    Tests for ``coba.stores.RevisionStore``.
+    Tests for ``coba.stores.Store``.
     """
     def setup(self):
         self.path = tempfile.mkdtemp()
         self.driver = local_storage_driver(self.path)
-        self.store = RevisionStore(self.driver, 'container')
+        self.store = Store(self.driver, 'container')
 
     def teardown(self):
         shutil.rmtree(self.path, ignore_errors=True)
@@ -80,4 +81,16 @@ class TestRevisionStore(object):
     @raises(KeyError)
     def test_get_content_keyerror(self):
         self.store.get_content('does not exist')
+
+    def test_paths_are_hashed(self):
+        """
+        Test that paths are hashed.
+        """
+        p = '/foo/bar'
+        rev = self.store.append_revision(p, time.time(), 1, 2, 3, 4, 5, 6, 7, 8)
+        for root, filenames, dirnames in os.walk(self.path):
+            for name in filenames + dirnames:
+                n = name.lower()
+                ok('foo' not in n)
+                ok('bar' not in n)
 

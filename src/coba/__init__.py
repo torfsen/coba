@@ -401,12 +401,12 @@ class Coba(object):
         location (``~/.coba/.config.json``) if that file exists.
         Otherwise the default configuration is used.
         """
-        from .stores import local_storage_driver, RevisionStore
+        from .stores import local_storage_driver, Store
         self.config = config or Configuration.load()
         make_dirs(self.config.log_dir)
         make_dirs(self.config.pid_dir)
         driver = local_storage_driver(self.config.storage_dir)
-        self.store = RevisionStore(driver, 'coba')
+        self.store = Store(driver, 'coba')
 
         def backup(path):
             self.file(path).backup()
