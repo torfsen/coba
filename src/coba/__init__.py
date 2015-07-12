@@ -140,7 +140,7 @@ class Revision(object):
 
     .. py:attribute:: store
 
-        The :py:class:`RevisionStore` instance which contains the
+        The :py:class:`Store` instance which contains the
         revision.
 
     .. py:attribute:: path
@@ -401,7 +401,7 @@ class Coba(object):
         location (``~/.coba/.config.json``) if that file exists.
         Otherwise the default configuration is used.
         """
-        from .stores import local_storage_driver, Store
+        from .storage import local_storage_driver, Store
         self.config = config or Configuration.load()
         make_dirs(self.config.log_dir)
         make_dirs(self.config.pid_dir)

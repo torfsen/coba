@@ -22,7 +22,7 @@
 # THE SOFTWARE.
 
 """
-Tests for ``coba.stores``.
+Tests for ``coba.storage``.
 """
 
 import cStringIO
@@ -34,7 +34,7 @@ import time
 from nose.tools import eq_ as eq, ok_ as ok, raises
 
 from coba import Revision
-from coba.stores import *
+from coba.storage import *
 from coba.utils import sha1
 
 
@@ -44,7 +44,7 @@ def _fake_revision(store, path):
 
 class TestRevisionStore(object):
     """
-    Tests for ``coba.stores.Store``.
+    Tests for ``coba.storage.Store``.
     """
     def setup(self):
         self.path = tempfile.mkdtemp()

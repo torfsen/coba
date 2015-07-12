@@ -45,7 +45,7 @@ API Reference
     coba_cli
     coba_compat
     coba_config
-    coba_stores
+    coba_storage
     coba_utils
     coba_warnings
     coba_watch

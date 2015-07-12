@@ -22,7 +22,7 @@
 # THE SOFTWARE.
 
 """
-Data stores based on LibCloud_ storage.
+Data storage based on LibCloud_.
 
 .. _LibCloud: https://libcloud.apache.org
 """

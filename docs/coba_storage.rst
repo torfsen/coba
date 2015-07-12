@@ -1,7 +1,7 @@
-``coba.stores``
-###############
+``coba.storage``
+################
 
-.. automodule:: coba.stores
+.. automodule:: coba.storage
     :members:
     :special-members: __init__
     :show-inheritance:
