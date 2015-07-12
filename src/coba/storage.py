@@ -29,10 +29,10 @@ Data storage based on LibCloud_.
 
 import binascii
 import json
-import gzip
 import hashlib
 import os
 import tempfile
+import zlib
 
 import libcloud.storage.types
 import libcloud.storage.drivers.local
@@ -48,19 +48,6 @@ __all__ = [
 ]
 
 
-def _download_to_temp_file(container, objname):
-    """
-    Download LibCloud object into temporary file.
-
-    Returns an open file object.
-    """
-    obj = container.get_object(objname)
-    temp_file = tempfile.TemporaryFile()
-    for block in obj.as_stream():
-        temp_file.write(block)
-    temp_file.seek(0)
-    return temp_file
-
 
 def _upload_from_file(container, objname, f):
     """
@@ -70,7 +57,7 @@ def _upload_from_file(container, objname, f):
     container.upload_object_via_stream(iterator, objname)
 
 
-def _hash_and_compress(f, block_size=2**20):
+def _hash_and_compress_file(f, block_size=2**20):
     """
     Hash and compress a file's content.
 
@@ -81,15 +68,46 @@ def _hash_and_compress(f, block_size=2**20):
     """
     hasher = hashlib.sha1()
     temp_file = tempfile.TemporaryFile()
-    with gzip.GzipFile(filename='', fileobj=temp_file, mode='wb') as gzip_file:
-        while True:
-            block = f.read(block_size)
-            if not block:
-                break
-            hasher.update(block)
-            gzip_file.write(block)
+    compressor = zlib.compressobj(9)
+    while True:
+        block = f.read(block_size)
+        if not block:
+            break
+        hasher.update(block)
+        temp_file.write(compressor.compress(block))
+    temp_file.write(compressor.flush())
     temp_file.seek(0)
     return hasher.hexdigest(), temp_file
+
+
+def _download_to_temp_file_and_decompress(container, objname):
+    """
+    Download LibCloud object into temporary file.
+
+    Returns an open file object.
+    """
+    obj = container.get_object(objname)
+    temp_file = tempfile.TemporaryFile()
+    decompressor = zlib.decompressobj()
+    for block in obj.as_stream():
+        temp_file.write(decompressor.decompress(block))
+    temp_file.write(decompressor.flush())
+    temp_file.seek(0)
+    return temp_file
+
+
+def _compress_string(s):
+    """
+    Compress a string using zlib.
+    """
+    return zlib.compress(s)
+
+
+def _decompress_string(s):
+    """
+    Decompress a string using zlib.
+    """
+    return zlib.decompress(s)
 
 
 def _make_salt():
@@ -100,17 +118,6 @@ def _make_salt():
     as a hex string.
     """
     return unicode(binascii.hexlify(os.urandom(64)))
-
-
-class _AutoCloseGzipFile(gzip.GzipFile):
-    """
-    Like ``gzip.GzipFile``, but automatically closes the underlying file.
-    """
-    def close(self):
-        fileobj = self.fileobj
-        super(_AutoCloseGzipFile, self).close()
-        if fileobj:
-            fileobj.close()
 
 
 class Store(object):
@@ -234,7 +241,7 @@ class Store(object):
         """
         key = self._path2key(path)
         try:
-            data = self._get_json(key)
+            data = self._get_compressed_json(key)
         except KeyError:
             return []
         path = data['path']
@@ -253,7 +260,7 @@ class Store(object):
             'path': path,
             'revisions': revisions,
         }
-        self._put_json(key, data)
+        self._put_compressed_json(key, data)
 
     def append_revision(self, path, *args, **kwargs):
         """
@@ -281,7 +288,7 @@ class Store(object):
         then be used to retrieve the data again using
         :py:meth:`get_content`.
         """
-        hash, compressed_file = _hash_and_compress(f)
+        hash, compressed_file = _hash_and_compress_file(f)
         key = self._hash2key(hash)
         _upload_from_file(self._container, key, compressed_file)
         return hash
@@ -300,10 +307,9 @@ class Store(object):
         """
         key = self._hash2key(hash)
         try:
-            temp_file = _download_to_temp_file(self._container, key)
+            return _download_to_temp_file_and_decompress(self._container, key)
         except libcloud.storage.types.ObjectDoesNotExistError:
             raise KeyError(hash)
-        return _AutoCloseGzipFile(filename='', fileobj=temp_file, mode='rb')
 
     def _get_string(self, key):
         """
@@ -320,6 +326,18 @@ class Store(object):
         Put a raw string into the store.
         """
         self._container.upload_object_via_stream(value, key)
+
+    def _put_compressed_json(self, key, value):
+        """
+        Encode data to JSON, compress and store it.
+        """
+        self._put_string(key, _compress_string(to_json(value)))
+
+    def _get_compressed_json(self, key):
+        """
+        Get compressed JSON data, decompress and decode it.
+        """
+        return json.loads(_decompress_string(self._get_string(key)))
 
     def _put_json(self, key, value):
         """
