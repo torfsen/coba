@@ -43,6 +43,7 @@ API Reference
 
     coba
     coba_cli
+    coba_compat
     coba_config
     coba_stores
     coba_utils
