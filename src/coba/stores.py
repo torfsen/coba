@@ -132,13 +132,17 @@ class Store(object):
         instance and ``container_name`` is the name of the container to
         use for the store. If the container exists the store contained
         in it will be loaded (if the container doesn't contain a valid
-        store then an exception is thrown). If the container does not
-        exist then it is created and a new store is initialized in it.
+        store then a :py:class:`ValueError` is thrown). If the
+        container does not exist then it is created and a new store is
+        initialized in it.
         """
         try:
             self._load_store(driver, container_name)
         except libcloud.storage.types.ContainerDoesNotExistError:
             self._create_store(driver, container_name)
+        except KeyError:
+            raise ValueError(('The container "%s" exists but is not a valid ' +
+                             'Coba store.') % container_name)
 
     @property
     def salt(self):

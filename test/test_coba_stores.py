@@ -94,3 +94,11 @@ class TestRevisionStore(object):
                 ok('foo' not in n)
                 ok('bar' not in n)
 
+    @raises(ValueError)
+    def test_invalid_store(self):
+        """
+        Test that an invalid store raises a ``ValueError``.
+        """
+        self.driver.create_container('invalid')
+        Store(self.driver, 'invalid')
+
