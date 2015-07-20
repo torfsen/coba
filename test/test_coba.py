@@ -74,7 +74,6 @@ class BaseTest(TempDirTest):
             self.coba.stop(block=5)
         super(BaseTest, self).teardown()
 
-
     def watch(self, *args, **kwargs):
         self.config_args.update(kwargs)
         self.config_args['watched_dirs'] = [self.path(d) for d in args]
