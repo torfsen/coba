@@ -1,4 +1,4 @@
-#!venv/bin/python
+#!/usr/bin/env python
 # vim: set fileencoding=utf-8 :
 
 # Copyright (c) 2015 Florian Brucker
@@ -25,9 +25,13 @@
 Test runner for coba tests.
 """
 
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+
 import sys
 
 import nose
+
 
 argv = sys.argv[:]
 argv.insert(1, '--nocapture')  # The daemon package doesn't like nose

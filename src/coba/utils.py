@@ -21,10 +21,12 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-
 """
 Various utilities.
 """
+
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
 
 import errno
 import hashlib

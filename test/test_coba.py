@@ -25,6 +25,9 @@
 Tests for ``coba``.
 """
 
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+
 import errno
 import grp
 import hashlib
@@ -41,7 +44,7 @@ from coba import Coba
 from coba.config import Configuration
 from coba.utils import sha1
 
-from utils import TempDirTest
+from .utils import TempDirTest
 
 
 # Look up Coba test users and groups. See the scripts ``create_test_users.sh``

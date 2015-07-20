@@ -29,6 +29,9 @@ by the ``watchdog`` package. These assumptions are essential to a
 correct behavior of Coba, so we explicitly test them here.
 """
 
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+
 import contextlib
 import os
 import os.path

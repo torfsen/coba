@@ -25,6 +25,9 @@
 Tests for ``coba.storage``.
 """
 
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+
 import cStringIO
 import os
 import shutil

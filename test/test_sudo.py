@@ -37,6 +37,9 @@ test users and groups are not available then the tests are automatically
 skipped.
 """
 
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+
 import errno
 import functools
 import grp

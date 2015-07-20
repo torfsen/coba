@@ -32,6 +32,9 @@ This module contains code to ease the transition between Python 2 and
 Python 3.
 """
 
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+
 import stat
 
 from backports.pbkdf2 import pbkdf2_hmac
