@@ -31,6 +31,8 @@ correct behavior of Coba, so we explicitly test them here.
 
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
+from future.builtins import *
+from future.builtins.disabled import *
 
 import contextlib
 import os

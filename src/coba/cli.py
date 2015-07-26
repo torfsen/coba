@@ -33,6 +33,8 @@ Python.
 
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
+from future.builtins import *
+from future.builtins.disabled import *
 
 import datetime
 import functools
@@ -135,7 +137,7 @@ def _print_matrix(matrix, margin=' '):
         for i, c in enumerate(row):
             max_len[i] = max(len(c), max_len[i])
     for row in matrix:
-        print margin.join(c.rjust(n) for c, n in zip(row, max_len))
+        click.echo(margin.join(c.rjust(n) for c, n in zip(row, max_len)))
 
 
 def _print_revisions(revs):
@@ -247,10 +249,10 @@ def status(ctx):
     if not.
     """
     if ctx.obj.is_running():
-        print "The backup daemon is running."
+        click.echo("The backup daemon is running.")
         logger.info('Daemon PID is %d.' % ctx.obj.get_pid())
     else:
-        print "The backup daemon is not running."
+        click.echo("The backup daemon is not running.")
         sys.exit(1)
 
 

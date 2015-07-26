@@ -27,11 +27,14 @@ Coba main module.
 
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
+from future.builtins import *
+from future.builtins.disabled import *
+from future.utils import iteritems
 
-import codecs
 import collections
 import datetime
 import grp
+import io
 import os
 import pwd
 import stat
@@ -375,7 +378,7 @@ class Revision(object):
         """
         if not isinstance(other, self.__class__):
             return NotImplemented
-        for k, v in self.__dict__.iteritems():
+        for k, v in iteritems(self.__dict__):
             if k != 'store' and v != getattr(other, k):
                 return False
         return True
@@ -384,7 +387,7 @@ class Revision(object):
         return not (self == other)
 
     def __hash__(self):
-        return hash(tuple(sorted((k, v) for k, v in self.__dict__.iteritems()
+        return hash(tuple(sorted((k, v) for k, v in iteritems(self.__dict__)
                     if k != 'store')))
 
 
@@ -482,7 +485,7 @@ class Coba(object):
         lines all of its lines are returned.
         """
         try:
-            with codecs.open(self.config.log_file, encoding='utf8') as f:
+            with io.open(self.config.log_file, encoding='utf8') as f:
                 return ''.join(tail(f, lines))
         except IOError as e:
             if e.errno == errno.ENOENT:

@@ -27,10 +27,13 @@ Common utilities for testing.
 
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
+from future.builtins import *
+from future.builtins.disabled import *
+from future.utils import raise_
 
-import codecs
 import errno
 import inspect
+import io
 import functools
 import os
 import os.path
@@ -65,14 +68,14 @@ def _print_logfile_on_error(fun):
             exc_info = sys.exc_info()
             log_dir = fun.__self__.config_args['log_dir']
             log_file = os.path.join(log_dir, 'coba.log')
-            print '\n===== START OF LOG FILE CONTENTS ====='
+            print('\n===== START OF LOG FILE CONTENTS =====')
             try:
-                with codecs.open(log_file, 'r', encoding='utf8') as f:
-                    print f.read()
+                with io.open(log_file, 'r', encoding='utf8') as f:
+                    print(f.read())
             except IOError as e:
                 pass
-            print '===== END OF LOG FILE CONTENTS =====\n'
-            raise exc_info[0], exc_info[1], exc_info[2]
+            print('===== END OF LOG FILE CONTENTS =====\n')
+            raise_(*exc_info)
     return wrapper
 
 
@@ -121,13 +124,13 @@ class TempDirTest(object):
     def write(self, path, content=''):
         path = self.path(path)
         self.mkdir(os.path.dirname(path))
-        with codecs.open(path, 'w', encoding='utf8') as f:
+        with io.open(path, 'w', encoding='utf8') as f:
             f.write(content)
         return content
 
     def read(self, path):
         path = self.path(path)
-        with codecs.open(path, 'r', encoding='utf8') as f:
+        with io.open(path, 'r', encoding='utf8') as f:
             return f.read()
 
     def move(self, src, target):

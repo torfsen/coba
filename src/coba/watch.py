@@ -27,6 +27,8 @@ File-system watching.
 
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
+from future.builtins import *
+from future.builtins.disabled import *
 
 import contextlib
 import functools
@@ -119,7 +121,7 @@ class FileQueue(object):
                                       'removed before backup.') % key)
             self.is_not_empty.notify_all()
 
-    def next(self):
+    def __next__(self):
         """
         Get next file to be processed.
 
@@ -187,7 +189,7 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
 
         ``logger`` is a :py:class:`logging.Logger` instance.
         """
-        super(EventHandler, self).__init__()
+        super().__init__()
         self._queue = queue
         self._is_ignored = is_ignored
         self._logger = logger
@@ -212,7 +214,7 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
             if isinstance(event, watchdog.events.DirDeletedEvent):
                 self._queue.register_directory_deletion(event.src_path)
             return  # Don't dispatch
-        super(EventHandler, self).dispatch(event)
+        super().dispatch(event)
 
     def on_created(self, event):
         self._register_file_modification(event.src_path)
@@ -251,7 +253,7 @@ class StorageThread(threading.Thread):
 
         ``logger`` is a :py:class:`logging.Logger` instance.
         """
-        super(StorageThread, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self._queue = queue
         self._backup = backup
         self._logger = logger
@@ -341,7 +343,7 @@ class Service(service.Service):
         ``config`` is an instance of
         :py:class:`coba.config.Configuration`.
         """
-        super(Service, self).__init__('coba', pid_dir=config.pid_dir)
+        super().__init__('coba', pid_dir=config.pid_dir)
         self._backup = backup
         self._config = config
         self._observers = []
@@ -352,7 +354,7 @@ class Service(service.Service):
         # `fileno` property. That happens, for example, during testing when
         # the output is captured by the test framework.
         with _original_streams():
-            super(Service, self).start(*args, **kwargs)
+            super().start(*args, **kwargs)
 
     def _init_logging(self):
         handler = logging.FileHandler(self._config.log_file, encoding='utf8')
