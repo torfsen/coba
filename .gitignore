@@ -3,6 +3,7 @@
 /venv/
 /src/coba.egg-info/
 /docs/_build/
+/test/keys/random_seed
 
 *.swp
 *.pyc
