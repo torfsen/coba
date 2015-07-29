@@ -69,7 +69,6 @@ class BaseTest(TempDirTest):
             self.coba.stop(block=5)
         super(BaseTest, self).teardown()
 
-
     def watch(self, *args, **kwargs):
         self.config_args.update(kwargs)
         self.config_args['watched_dirs'] = [self.path(d) for d in args]
@@ -149,8 +148,9 @@ class BaseTest(TempDirTest):
         rev.restore(target=target, content=content, mtime=mtime, mode=mode,
                     user=user, group=group)
         eq(self.read(compare_path), old_content if content else new_content)
-        assert_almost_equal(self.get_mtime(compare_path), old_mtime if mtime
-                            else new_mtime, delta=0.1)
+        if mtime:
+            assert_almost_equal(self.get_mtime(compare_path), old_mtime,
+                                delta=1e-3)
         eq(self.get_mode(compare_path), old_mode if mode else new_mode)
         exp_group = exp_group or (old_group if group else new_group)
         eq(self.get_group(compare_path), exp_group)

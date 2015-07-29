@@ -48,6 +48,7 @@ def assert_matches(pattern, string):
     m = re.match(pattern, string)
     if not m:
         raise AssertionError('%r does not match %r.' % (pattern, string))
+    return m
 
 
 # Pattern matching a single line of output from `coba revs ...`
@@ -142,8 +143,7 @@ class TestCobaCLI(TempDirTest):
         self.write('watch/foo', 'bar')
         time.sleep(1)
         code, output = self.run('revs', 'foo')
-        m = re.match(_REVS_LINE + _REVS_LINE, output)
-        ok(m)
+        m = assert_matches(_REVS_LINE + _REVS_LINE, output)
         eq(code, 0)
         hash = m.groups()[0]
         code, output = self.run('revs', '--hash', hash[:5], 'foo')
@@ -157,8 +157,7 @@ class TestCobaCLI(TempDirTest):
         self.write('watch/foo', 'bar')
         time.sleep(1)
         code, output = self.run('revs', 'foo')
-        m = re.match(_REVS_LINE + _REVS_LINE, output)
-        ok(m)
+        m = assert_matches(_REVS_LINE + _REVS_LINE, output)
         eq(code, 0)
         hash = m.groups()[0]
         code, output = self.run('restore', '--hash', hash[:5], 'foo')
