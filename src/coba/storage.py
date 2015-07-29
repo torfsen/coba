@@ -28,8 +28,9 @@ Data storage based on LibCloud_.
 """
 
 import binascii
-import json
+import gzip
 import hashlib
+import json
 import os
 import tempfile
 import zlib
@@ -38,6 +39,7 @@ import libcloud.storage.types
 import libcloud.storage.drivers.local
 
 from . import Revision
+from .crypto import is_encrypted
 from .utils import binary_file_iterator, make_dirs, normalize_path, to_json
 from .compat import pbkdf2_hmac
 
@@ -48,7 +50,6 @@ __all__ = [
 ]
 
 
-
 def _upload_from_file(container, objname, f):
     """
     Upload file content to a LibCloud object.
@@ -57,7 +58,7 @@ def _upload_from_file(container, objname, f):
     container.upload_object_via_stream(iterator, objname)
 
 
-def _hash_and_compress_file(f, block_size=2**20):
+def _hash_and_compress_file(f, hasher=None, block_size=2**20):
     """
     Hash and compress a file's content.
 
@@ -65,8 +66,11 @@ def _hash_and_compress_file(f, block_size=2**20):
     and compressed in a temporary file. The uncompressed content's hash
     and the open temporary file are returned. Note that the temporary
     file is automatically deleted once its handle is closed.
+
+    ``hasher`` is a hasher from :py:mod:`hashlib` (default:
+    :py:class:`hashlib.sha1`).
     """
-    hasher = hashlib.sha1()
+    hasher = hasher or hashlib.sha1()
     temp_file = tempfile.TemporaryFile()
     compressor = zlib.compressobj(9)
     while True:
@@ -80,18 +84,85 @@ def _hash_and_compress_file(f, block_size=2**20):
     return hasher.hexdigest(), temp_file
 
 
-def _download_to_temp_file_and_decompress(container, objname):
+def _HashingFile(object):
+    """
+    File-wrapper that hashes content while reading.
+
+    Wrap around an open file-like object, read data via the wrapper and
+    use :py:meth:`_HashingFile.hexdigest` to get a hex digest of the hash
+    of the data read so far.
+    """
+    def __init__(self, f, hasher=None):
+        """
+        Constructor.
+
+        ``f`` is an open file-like object and ``hasher`` is a hasher from
+        :py:mod:`hashlib` (default: :py:class:`hashlib.sha1`).
+        """
+        self._file = f
+        self._hasher = hasher or hashlib.sha1()
+
+    def hexdigest(self):
+        """
+        Hex digest of the hash of the data read so far.
+        """
+        return self._hasher.hexdigest()
+
+    def readline(self, *args, **kwargs):
+        line = self._file.readline(*args, **kwargs)
+        self._hasher.update(line)
+        return line
+
+    def readlines(self, *args, **kwargs):
+        for line in self._file.readlines(*args, **kwargs):
+            self._hasher.update(line)
+            yield line
+
+    def read(self, *args, **kwargs):
+        data = self._file.read(*args, **kwargs)
+        self._hasher.update(data)
+        return data
+
+    def seek(self, *args, **kwargs):
+        raise NotImplementedError('Seeking is not supported.')
+
+    def write(self, *args, **kwargs):
+        raise NotImplementedError('Writing is not supported.')
+
+
+def _decompress_file(input_file, block_size=2**20):
+    """
+    Decompress file to temporary file.
+
+    ``input_file`` is an open file-like object containing
+    zlib-compressed data. The data is decompressed and stored in a
+    temporary file, a handle to that file is returned. The temporary
+    file is automatically deleted once that handle is closed.
+    """
+    temp_file = tempfile.TemporaryFile()
+    decompressor = zlib.decompressobj()
+    while True:
+        data = input_file.read(block_size)
+        if not data:
+            break
+        temp_file.write(decompressor.decompress(data))
+    temp_file.write(decompressor.flush())
+    temp_file.seek(0)
+    return temp_file
+
+
+def _download_to_temp_file(container, objname):
     """
     Download LibCloud object into temporary file.
 
-    Returns an open file object.
+    Returns an open file object with its file pointer at the beginning
+    of the file. The temporary file is deleted automatically once the
+    file object is closed.
     """
     obj = container.get_object(objname)
     temp_file = tempfile.TemporaryFile()
-    decompressor = zlib.decompressobj()
     for block in obj.as_stream():
-        temp_file.write(decompressor.decompress(block))
-    temp_file.write(decompressor.flush())
+        temp_file.write(block)
     temp_file.seek(0)
     return temp_file
 
@@ -128,10 +199,12 @@ class Store(object):
     _SETTINGS_PREFIX  = 'settings'
     _META_PREFIX = 'meta'
     _BLOB_PREFIX = 'blobs'
-    _HASH_ALGO = 'sha256'
+    _HASH_ALGO = 'sha1'
     _HASH_ROUNDS = 100000
 
-    def __init__(self, driver, container_name):
+    _HASH_CLASS = getattr(hashlib, _HASH_ALGO)
+
+    def __init__(self, driver, container_name, crypto_provider):
         """
         Constructor.
 
@@ -142,6 +215,11 @@ class Store(object):
         store then a :py:class:`ValueError` is thrown). If the
         container does not exist then it is created and a new store is
         initialized in it.
+
+        ``crypto_provider`` is a :py:class:`coba.crypto.CryptoProvider`
+        instance. If it has a recipient set then all revision and file
+        data uploaded to the store is encrypted using the recipient's
+        public key.
         """
         try:
             self._load_store(driver, container_name)
@@ -150,6 +228,7 @@ class Store(object):
         except KeyError:
             raise ValueError(('The container "%s" exists but is not a valid ' +
                              'Coba store.') % container_name)
+        self.crypto_provider = crypto_provider
 
     @property
     def salt(self):
@@ -221,7 +300,7 @@ class Store(object):
 
         Returns the setting's value.
         """
-        self._put_json(self._setting2key(name), value)
+        self._put_raw_data(self._setting2key(name), to_json(value))
         return value
 
     def _get_setting(self, name):
@@ -231,7 +310,7 @@ class Store(object):
         Raises a :py:class:`KeyError` if the setting does not exist.
         """
         try:
-            return self._get_json(self._setting2key(name))
+            return json.loads(self._get_raw_data(self._setting2key(name)))
         except KeyError:
             raise KeyError(name)
 
@@ -241,7 +320,7 @@ class Store(object):
         """
         key = self._path2key(path)
         try:
-            data = self._get_compressed_json(key)
+            data = json.loads(self._get_data(key))
         except KeyError:
             return []
         path = data['path']
@@ -260,7 +339,7 @@ class Store(object):
             'path': path,
             'revisions': revisions,
         }
-        self._put_compressed_json(key, data)
+        self._put_data(key, to_json(data))
 
     def append_revision(self, path, *args, **kwargs):
         """
@@ -287,33 +366,98 @@ class Store(object):
         compressed, and stored. The return value is the hash which can
         then be used to retrieve the data again using
         :py:meth:`get_content`.
+
+        If :py:attr:`Store.crypto_provider` has a recipient set then
+        the file content is encrypted using the recipient's public key.
         """
-        hash, compressed_file = _hash_and_compress_file(f)
+        if self.crypto_provider.recipient:
+            hash, source_file = self._hash_and_encrypt_file(f)
+        else:
+            hash, source_file = _hash_and_compress_file(f, self._HASH_CLASS())
         key = self._hash2key(hash)
-        _upload_from_file(self._container, key, compressed_file)
+        _upload_from_file(self._container, key, source_file)
         return hash
+
+    def _hash_and_encrypt_file(self, f):
+        """
+        Hash file content and encrypt it.
+
+        The content of the open file-like object ``f`` is hashed and
+        encrypted. The return value is a pair of the hash and a file
+        handle to a temporary file containing the encrypted data. The
+        temporary file is automatically deleted once the file handle is
+        closed.
+        """
+        hashing_file = _HashingFile(f, self._HASH_CLASS())
+        temp_file = tempfile.TemporaryFile()
+        self.crypto_provider.encrypt(hashing_file, temp_file)
+        temp_file.seek(0)
+        return hashing_file.hexdigest(), temp_file
+
+    def _decrypt_file(self, f):
+        """
+        Decrypt file content.
+
+        The content of the open file-like object ``f`` is decrypted. The
+        return value is a file handle to a temporary file containing the
+        decrypted data. The temporary file is automatically deleted once
+        that file handle is closed.
+        """
+        temp_file = tempfile.TemporaryFile()
+        self.crypto_provider.decrypt(f, temp_file)
+        temp_file.seek(0)
+        return temp_file
+
+    def _encrypt_string(self, s):
+        """
+        Encrypt a string.
+        """
+        output = cStringIO.StringIO()
+        self.crypto_provider.encrypt(cStringIO.StringIO(s), output)
+        return output.getvalue()
+
+    def _decrypt_string(self, s):
+        """
+        Decrypt a string.
+        """
+        output = cStringIO.StringIO()
+        self.crypto_provider.decrypt(cStringIO.StringIO(s), output)
+        return output.getvalue()
 
     def get_content(self, hash):
         """
         Retrieve content.
 
-        Returns the uncompressed content stored at the given hash in
-        the form of an open file handle to a temporary file. The
-        temporary file is automatically deleted when the file handle
-        is closed.
+        Returns the uncompressed and decrypted content stored at the
+        given hash in the form of an open file handle to a temporary
+        file. The temporary file is automatically deleted when the file
+        handle is closed.
 
         If no content for the given hash can be found a ``KeyError`` is
         raised.
         """
         key = self._hash2key(hash)
         try:
-            return _download_to_temp_file_and_decompress(self._container, key)
+            temp_file = _download_to_temp_file(self._container, key)
         except libcloud.storage.types.ObjectDoesNotExistError:
             raise KeyError(hash)
+        try:
+            if is_encrypted(temp_file):
+                return self._decrypt_file(temp_file)
+            else:
+                return _decompress_file(temp_file)
+        finally:
+            temp_file.close()
 
-    def _get_string(self, key):
+    def _put_raw_data(self, key, value):
         """
-        Get a raw string from the store.
+        Put a raw data into the store.
+        """
+        self._container.upload_object_via_stream(value, key)
+
+    def _get_raw_data(self, key):
+        """
+        Get a raw data from the store.
         """
         try:
             obj = self._container.get_object(key)
@@ -321,35 +465,25 @@ class Store(object):
             raise KeyError(key)
         return ''.join(obj.as_stream())
 
-    def _put_string(self, key, value):
+    def _get_data(self, key):
         """
-        Put a raw string into the store.
+        Get data from the store and decompress/decrypt it.
         """
-        self._container.upload_object_via_stream(value, key)
+        data = self._get_raw_data(key)
+        if is_encrypted(data):
+            return self._decrypt_string(data)
+        else:
+            return _decompress_string(data)
 
-    def _put_compressed_json(self, key, value):
+    def _put_data(self, key, value):
         """
-        Encode data to JSON, compress and store it.
+        Compress/encrypt data and store it.
         """
-        self._put_string(key, _compress_string(to_json(value)))
-
-    def _get_compressed_json(self, key):
-        """
-        Get compressed JSON data, decompress and decode it.
-        """
-        return json.loads(_decompress_string(self._get_string(key)))
-
-    def _put_json(self, key, value):
-        """
-        Encode data to JSON and store it.
-        """
-        self._put_string(key, to_json(value))
-
-    def _get_json(self, key):
-        """
-        Get JSON data and decode it.
-        """
-        return json.loads(self._get_string(key))
+        if self.crypto_provider.recipient:
+            value = self._encrypt_string(value)
+        else:
+            value = _compress_string(value)
+        self._put_raw_data(key, value)
 
 
 def local_storage_driver(path):
@@ -364,3 +498,4 @@ def local_storage_driver(path):
     """
     make_dirs(path)
     return libcloud.storage.drivers.local.LocalStorageDriver(path)
+

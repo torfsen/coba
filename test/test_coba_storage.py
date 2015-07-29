@@ -34,6 +34,7 @@ import time
 from nose.tools import eq_ as eq, ok_ as ok, raises
 
 from coba import Revision
+from coba.crypto import CryptoProvider
 from coba.storage import *
 from coba.utils import sha1
 
@@ -49,7 +50,7 @@ class TestRevisionStore(object):
     def setup(self):
         self.path = tempfile.mkdtemp()
         self.driver = local_storage_driver(self.path)
-        self.store = Store(self.driver, 'container')
+        self.store = Store(self.driver, 'container', CryptoProvider())
 
     def teardown(self):
         shutil.rmtree(self.path, ignore_errors=True)
@@ -100,5 +101,5 @@ class TestRevisionStore(object):
         Test that an invalid store raises a ``ValueError``.
         """
         self.driver.create_container('invalid')
-        Store(self.driver, 'invalid')
+        Store(self.driver, 'invalid', None)
 

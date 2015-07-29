@@ -37,6 +37,7 @@ import time
 import pathlib
 
 from .config import Configuration
+from .crypto import CryptoProvider
 from .utils import make_dirs, normalize_path, sha1, tail, to_json
 from .watch import Service
 from .warnings import (GroupMismatchWarning, NoSuchGroupWarning,
@@ -406,7 +407,8 @@ class Coba(object):
         make_dirs(self.config.log_dir)
         make_dirs(self.config.pid_dir)
         driver = local_storage_driver(self.config.storage_dir)
-        self.store = Store(driver, 'coba')
+        crypto_provider = CryptoProvider()
+        self.store = Store(driver, 'coba', crypto_provider)
 
         def backup(path):
             self.file(path).backup()

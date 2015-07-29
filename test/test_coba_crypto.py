@@ -71,7 +71,7 @@ def without_gpgme(f):
 
 _GPG_KEY_DIR = os.path.join(os.path.dirname(__file__), 'keys')
 
-def with_provider(recipient='test@coba'):
+def with_provider(recipient=None):
     def decorator(f):
         @functools.wraps(f)
         def wrapper():
@@ -134,6 +134,36 @@ def test_encryption_decryption(p):
     eq(decrypted_buffer.getvalue(), data)
 
 
+@raises(coba.crypto.CryptoError)
+@with_provider()
+@needs_gpgme
+def test_encryption_without_recipient(p):
+    """
+    Test encryption without a recipient.
+    """
+    p.encrypt(None, None)
+
+
+@raises(coba.crypto.CryptoGPGMEError)
+@with_provider('test@coba')
+@needs_gpgme
+def test_encryption_gpgme_error(p):
+    """
+    Test exception wrapping during encryption.
+    """
+    p.encrypt(None, None)
+
+
+@raises(coba.crypto.CryptoGPGMEError)
+@with_provider('test@coba')
+@needs_gpgme
+def test_decryption_gpgme_error(p):
+    """
+    Test exception wrapping during decryption.
+    """
+    p.decrypt(None, None)
+
+
 @raises(coba.crypto.CryptoUnavailableError)
 @with_provider('test@coba')
 @without_gpgme
@@ -152,4 +182,16 @@ def test_decryption_no_gpgme(p):
     Test decryption without PyGPGME.
     """
     p.decrypt(None, None)
+
+
+def test_is_encrypted_new_format():
+    assert False
+
+
+def test_is_encrypted_old_format():
+    assert False
+
+
+def test_is_encrypted_not_encrypted():
+    assert False
 

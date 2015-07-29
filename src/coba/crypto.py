@@ -32,6 +32,7 @@ any crypto operations will raise :py:class:`CryptoUnavailableError`.
 """
 
 import functools
+import os
 
 try:
     import gpgme
@@ -40,7 +41,13 @@ except ImportError as e:
     _GPGME_ERROR = e
 
 
-__all__ = ['CryptoError', 'CryptoProvider', 'CryptoUnavailableError']
+__all__ = [
+    'CryptoError',
+    'CryptoGPGMEError',
+    'CryptoProvider',
+    'CryptoUnavailableError',
+    'is_encrypted',
+]
 
 
 class CryptoError(Exception):
@@ -60,6 +67,25 @@ class CryptoUnavailableError(CryptoError):
     .. _PyGPGME: https://pypi.python.org/pypi/pygpgme
     """
     pass
+
+
+class CryptoGPGMEError(CryptoError):
+    """
+    Raised if GPGME reports an error.
+
+    .. py:attr:: cause
+
+        An instance of :py:class:`gpgme.GpgmeError` with the original
+        error.
+    """
+    def __init__(self, cause):
+        """
+        Constructor.
+
+        ``cause`` is an instance of :py:class:`gpgme.GpgmeError`.
+        """
+        super(CryptoGPGMEError, self).__init__(cause.message)
+        self.cause = cause
 
 
 def _needs_crypto(f):
@@ -119,7 +145,21 @@ class CryptoProvider(object):
         if not _GPGME_ERROR:
             self._ctx = gpgme.Context()
             self._ctx.set_engine_info(gpgme.PROTOCOL_OpenPGP, None, key_dir)
-            self._recipient = _get_key(self._ctx, recipient)
+            if recipient:
+                self._recipient = _get_key(self._ctx, recipient)
+            else:
+                self._recipient = None
+
+    @property
+    def recipient(self):
+        """
+        The recipient's key.
+
+        This is either ``None`` or a :py:class:`gpgme.Key` instance with
+        the GPG key of the recipient passed to
+        :py:meth:`CryptoProvider.__init__`.
+        """
+        return self._recipient
 
     @_needs_crypto
     def encrypt(self, plaintext, ciphertext):
@@ -132,7 +172,12 @@ class CryptoProvider(object):
         key of the recipient passed to
         :py:meth:`CryptoProvider.__init__`.
         """
-        self._ctx.encrypt([self._recipient], 0, plaintext, ciphertext)
+        if not self._recipient:
+            raise CryptoError('Cannot encrypt if no recipient is set.')
+        try:
+            self._ctx.encrypt([self._recipient], 0, plaintext, ciphertext)
+        except gpgme.GpgmeError as e:
+            raise CryptoGPGMEError(e)
 
     @_needs_crypto
     def decrypt(self, ciphertext, plaintext):
@@ -143,5 +188,49 @@ class CryptoProvider(object):
         ``ciphertext`` and stores the decrypted byte stream in the open
         file-like object ``plaintext``.
         """
-        self._ctx.decrypt(ciphertext, plaintext)
+        try:
+            self._ctx.decrypt(ciphertext, plaintext)
+        except gpgme.GpgmeError as e:
+            raise CryptoGPGMEError(e)
+
+
+def is_encrypted(x):
+    """
+    Check if a string or file has been encrypted using GPG.
+
+    ``x`` is either a string or an open file-like object. It is checked
+    whether ``x`` contains GPG-encrypted data.
+
+    The actual check is only a very simple heuristic: The first byte of
+    ``x`` is checked to contain a valid OpenPGP packet header for a
+    public-key encrypted session key packet. This means that this
+    function is prone to false positives.
+
+    If ``x`` is a file-like object then its file pointer is reset to its
+    original location after the check.
+
+    See RFC 4480 for details on the OpenPGP packet format.
+    """
+    if not x:
+        return False
+    try:
+        # Assume string
+        c = x[0]
+    except TypeError:
+        # Assume file
+        c = x.read(1)
+        if not c:
+            # EOF
+            return False
+        x.seek(-1, os.SEEK_CUR)
+    b = ord(c)
+    if not b & 0x80:  # Bit 7
+        return False
+    if b & 0x40:  # Bit 6
+        # New packet format
+        tag = b & 0x3f  # Bits 5-0
+    else:
+        # Old packet format
+        tag = (b & 0x3c) >> 2  # Bits 5-2
+    return tag == 1  # Public-Key Encrypted Session Key Packet
 
