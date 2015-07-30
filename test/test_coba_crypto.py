@@ -184,14 +184,13 @@ def test_decryption_no_gpgme(p):
     p.decrypt(None, None)
 
 
-def test_is_encrypted_new_format():
-    assert False
-
-
-def test_is_encrypted_old_format():
-    assert False
-
-
-def test_is_encrypted_not_encrypted():
-    assert False
+def test_is_encrypted():
+    """
+    Test recognition of OpenPGP packet data.
+    """
+    for case in (0xc1, 0x84, 0x85, 0x86, 0x87):
+        ok(coba.crypto.is_encrypted(chr(case)))
+        ok(coba.crypto.is_encrypted(io.BytesIO(chr(case))))
+    ok(not coba.crypto.is_encrypted('foo'))
+    ok(not coba.crypto.is_encrypted(io.BytesIO('foo')))
 

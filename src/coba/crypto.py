@@ -209,7 +209,7 @@ def is_encrypted(x):
     If ``x`` is a file-like object then its file pointer is reset to its
     original location after the check.
 
-    See RFC 4480 for details on the OpenPGP packet format.
+    See RFC 4880 for details on the OpenPGP packet format.
     """
     if not x:
         return False
@@ -223,14 +223,5 @@ def is_encrypted(x):
             # EOF
             return False
         x.seek(-1, os.SEEK_CUR)
-    b = ord(c)
-    if not b & 0x80:  # Bit 7
-        return False
-    if b & 0x40:  # Bit 6
-        # New packet format
-        tag = b & 0x3f  # Bits 5-0
-    else:
-        # Old packet format
-        tag = (b & 0x3c) >> 2  # Bits 5-2
-    return tag == 1  # Public-Key Encrypted Session Key Packet
+    return ord(c) in (0xc1, 0x84, 0x85, 0x86, 0x87)
 

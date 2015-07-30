@@ -1,4 +1,4 @@
-#!venv/bin/python
+#!/usr/bin/env python
 # vim: set fileencoding=utf-8 :
 
 # Copyright (c) 2015 Florian Brucker
