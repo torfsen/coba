@@ -112,10 +112,11 @@ todo_include_todos = False
 
 # Intersphinx configuration
 intersphinx_mapping = {
-    'python': ('https://docs.python.org/2.7', 'python27.inv'),
+    'gpgme': ('https://pygpgme.readthedocs.org/en/latest/', 'pygpgme.inv'),
     'libcloud': ('https://libcloud.readthedocs.org/en/latest', 'libcloud.inv'),
     'service': ('https://python-service.readthedocs.org/en/latest', 'service.inv'),
     'pathlib': ('https://pathlib.readthedocs.org/en/pep428', 'pathlib.inv'),
+    'python': ('https://docs.python.org/2.7', 'python27.inv'),
 }
 
 # -- Options for HTML output ----------------------------------------------

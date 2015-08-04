@@ -73,7 +73,7 @@ class CryptoGPGMEError(CryptoError):
     """
     Raised if GPGME reports an error.
 
-    .. py:attr:: cause
+    .. py:attribute:: cause
 
         An instance of :py:class:`gpgme.GpgmeError` with the original
         error.
