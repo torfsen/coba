@@ -69,13 +69,13 @@ def without_gpgme(f):
 # Tests for ``CryptoProvider``
 #
 
-_GPG_KEY_DIR = os.path.join(os.path.dirname(__file__), 'keys')
+GPG_KEY_DIR = os.path.join(os.path.dirname(__file__), 'keys')
 
 def with_provider(recipient=None):
     def decorator(f):
         @functools.wraps(f)
         def wrapper():
-            return f(coba.crypto.CryptoProvider(recipient, _GPG_KEY_DIR))
+            return f(coba.crypto.CryptoProvider(recipient, GPG_KEY_DIR))
         return wrapper
     return decorator
 
@@ -109,7 +109,7 @@ def test_key_lookup_invalid(p):
 
 
 @raises(coba.crypto.CryptoError)
-@with_provider('coba')
+@with_provider('test2@coba')
 @needs_gpgme
 def test_key_lookup_ambiguous(p):
     """
@@ -190,7 +190,12 @@ def test_is_encrypted():
     """
     for case in (0xc1, 0x84, 0x85, 0x86, 0x87):
         ok(coba.crypto.is_encrypted(chr(case)))
-        ok(coba.crypto.is_encrypted(io.BytesIO(chr(case))))
-    ok(not coba.crypto.is_encrypted('foo'))
-    ok(not coba.crypto.is_encrypted(io.BytesIO('foo')))
+        buf = io.BytesIO(chr(case))
+        ok(coba.crypto.is_encrypted(buf))
+        eq(buf.tell(), 0)
+    for case in ['', 'foo']:
+        ok(not coba.crypto.is_encrypted(case))
+        buf = io.BytesIO(case)
+        ok(not coba.crypto.is_encrypted(buf))
+        eq(buf.tell(), 0)
 

@@ -116,14 +116,11 @@ def _get_key(ctx, s):
     """
     try:
         return ctx.get_key(s)
-    except gpgme.GpgmeError:
-        pass
-    keys = list(ctx.keylist(s))
-    if not keys:
-        raise CryptoError('No GPG keys match "%s".' % s)
-    if len(keys) > 1:
-        raise CryptoError('GPG key information "%s" is ambiguous.' % s)
-    return keys[0]
+    except gpgme.GpgmeError as e:
+        if e.code in (gpgme.ERR_EOF, gpgme.ERR_INV_VALUE):
+            raise CryptoError('No GPG key matches "%s".' % s)
+        elif e.code == gpgme.ERR_AMBIGUOUS_NAME:
+            raise CryptoError('GPG key information "%s" is ambiguous.' % s)
 
 
 class CryptoProvider(object):
@@ -142,13 +139,12 @@ class CryptoProvider(object):
         ``key_dir`` is the directory containing the keys, if it is not
         specified then GPG's default will be used.
         """
+        self._recipient = None
         if not _GPGME_ERROR:
             self._ctx = gpgme.Context()
             self._ctx.set_engine_info(gpgme.PROTOCOL_OpenPGP, None, key_dir)
             if recipient:
                 self._recipient = _get_key(self._ctx, recipient)
-            else:
-                self._recipient = None
 
     @property
     def recipient(self):
@@ -192,6 +188,24 @@ class CryptoProvider(object):
             self._ctx.decrypt(ciphertext, plaintext)
         except gpgme.GpgmeError as e:
             raise CryptoGPGMEError(e)
+
+    @_needs_crypto
+    def test(self):
+        """
+        Perform a test of the cryptographic functions.
+        """
+        if not self._recipient:
+            raise CryptoError('Cannot test crypto if no recipient is set.')
+        plain = io.BytesIO('foobar')
+        cipher = io.BytesIO()
+        self.encrypt(plain, cipher)
+        if plain.getvalue() == cipher.getvalue():
+            raise CryptoError('Encryption failed')
+        cipher.seek(0)
+        decrypted = io.BytesIO()
+        self.decrypt(cipher, decrypted)
+        if plain.getvalue() != decrypted.getvalue():
+            raise CryptoError('Decryption failed')
 
 
 def is_encrypted(x):

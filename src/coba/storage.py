@@ -30,6 +30,7 @@ Data storage based on LibCloud_.
 import binascii
 import gzip
 import hashlib
+import io
 import json
 import os
 import tempfile
@@ -412,16 +413,16 @@ class Store(object):
         """
         Encrypt a string.
         """
-        output = cStringIO.StringIO()
-        self.crypto_provider.encrypt(cStringIO.StringIO(s), output)
+        output = io.BytesIO()
+        self.crypto_provider.encrypt(io.BytesIO(s), output)
         return output.getvalue()
 
     def _decrypt_string(self, s):
         """
         Decrypt a string.
         """
-        output = cStringIO.StringIO()
-        self.crypto_provider.decrypt(cStringIO.StringIO(s), output)
+        output = io.BytesIO()
+        self.crypto_provider.decrypt(io.BytesIO(s), output)
         return output.getvalue()
 
     def get_content(self, hash):
