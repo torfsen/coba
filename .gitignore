@@ -1,8 +1,10 @@
+/.coverage
 /build/
+/cover/
 /dist/
-/venv/
-/src/coba.egg-info/
 /docs/_build/
+/src/coba.egg-info/
+/venv/
 
 *.swp
 *.pyc
