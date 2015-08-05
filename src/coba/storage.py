@@ -41,7 +41,8 @@ import libcloud.storage.drivers.local
 
 from . import Revision
 from .crypto import is_encrypted
-from .utils import binary_file_iterator, make_dirs, normalize_path, to_json
+from .utils import (binary_file_iterator, make_dirs, normalize_path, sha1,
+                    to_json)
 from .compat import pbkdf2_hmac
 
 
@@ -85,7 +86,7 @@ def _hash_and_compress_file(f, hasher=None, block_size=2**20):
     return hasher.hexdigest(), temp_file
 
 
-def _HashingFile(object):
+class _HashingFile(object):
     """
     File-wrapper that hashes content while reading.
 
@@ -109,26 +110,10 @@ def _HashingFile(object):
         """
         return self._hasher.hexdigest()
 
-    def readline(self, *args, **kwargs):
-        line = self._file.readline(*args, **kwargs)
-        self._hasher.update(line)
-        return line
-
-    def readlines(self, *args, **kwargs):
-        for line in self._file.readlines(*args, **kwargs):
-            self._hasher.update(line)
-            yield line
-
     def read(self, *args, **kwargs):
         data = self._file.read(*args, **kwargs)
         self._hasher.update(data)
         return data
-
-    def seek(self, *args, **kwargs):
-        raise NotImplementedError('Seeking is not supported.')
-
-    def write(self, *args, **kwargs):
-        raise NotImplementedError('Writing is not supported.')
 
 
 def _decompress_file(input_file, block_size=2**20):
@@ -182,26 +167,28 @@ def _decompress_string(s):
     return zlib.decompress(s)
 
 
-def _make_salt():
+def _make_salt(n=64):
     """
     Create a cryptographically secure salt string.
 
-    Returns a Unicode string containing 64 secure random bytes encoded
-    as a hex string.
+    Returns a Unicode string containing ``n`` secure random bytes
+    encoded as a hex string.
     """
-    return unicode(binascii.hexlify(os.urandom(64)))
+    return unicode(binascii.hexlify(os.urandom(n)))
 
 
 class Store(object):
     """
     Store for revision content and meta-data.
     """
-    _FORMAT_VERSION = 1
-    _SETTINGS_PREFIX  = 'settings'
-    _META_PREFIX = 'meta'
-    _BLOB_PREFIX = 'blobs'
-    _HASH_ALGO = 'sha1'
-    _HASH_ROUNDS = 100000
+    _FORMAT_VERSION = 1             # Store layout format version
+    _SETTINGS_PREFIX  = 'settings'  # Directory prefix for settings
+    _META_PREFIX = 'meta'           # Directory prefix for meta-data
+    _BLOB_PREFIX = 'blobs'          # Directory prefix for content blobs
+    _SALT_PREFIX = 'salts'          # Directory prefix for filename salts
+    _HASH_ALGO = 'sha1'             # Hash algorithm
+    _HASH_ROUNDS = 100000           # Number of rounds for salted hashes
+    _SALT_LENGTH = 16               # Length of salts in bytes
 
     _HASH_CLASS = getattr(hashlib, _HASH_ALGO)
 
@@ -232,13 +219,6 @@ class Store(object):
         self.crypto_provider = crypto_provider
 
     @property
-    def salt(self):
-        """
-        The salt used for hashing paths.
-        """
-        return self._salt
-
-    @property
     def format_version(self):
         """
         The storage format version used by the store.
@@ -250,7 +230,6 @@ class Store(object):
         Create and initialize store in a LibCloud container.
         """
         self._container = driver.create_container(container_name)
-        self._salt = self._set_setting('salt', _make_salt())
         self._format_version = self._set_setting(
             'format_version', self._FORMAT_VERSION)
 
@@ -261,33 +240,54 @@ class Store(object):
         self._container = driver.get_container(container_name)
         self._format_version = self._get_setting('format_version')
         if self._format_version > self._FORMAT_VERSION:
-            raise ValueError('Store uses the storage format version %d ' +
+            raise ValueError(('Store uses the storage format version %d ' +
                              'which is from a newer version of Coba and ' +
-                             'not supported in this version.' %
+                             'not supported in this version.') %
                              self._format_version)
-        self._salt = self._get_setting('salt')
 
-    def _hash(self, s):
+    def _get_path_salt(self, path):
+        path = str(normalize_path(path))
+        hash = sha1(path)
+        key = '%s/%s/%s' % (self._SALT_PREFIX, hash[:2], hash[2:4])
+        try:
+            salts = json.loads(self._get_data(key))
+        except KeyError:
+            salts = {}
+        try:
+            return salts[path]
+        except KeyError:
+            salts[path] = salt = _make_salt(self._SALT_LENGTH)
+            self._put_data(key, to_json(salts))
+            return salt
+
+    def _hash_path(self, path):
+        path = str(normalize_path(path))
+        salt = self._get_path_salt(path)
+        return self._salted_hash(path, salt)
+
+    def _salted_hash(self, s, salt):
         """
         Hash a string using a cryptographically secure hash function.
 
         Returns a Unicode string with the hash encoded as a hex string.
         """
-        h = pbkdf2_hmac(self._HASH_ALGO, s, self._salt, self._HASH_ROUNDS)
+        h = pbkdf2_hmac(self._HASH_ALGO, s, salt, self._HASH_ROUNDS)
         return unicode(binascii.hexlify(h))
 
     def _path2key(self, path):
         """
         Create meta-data key from file path.
         """
-        path = str(normalize_path(path))
-        return self._META_PREFIX + '/' + self._hash(path)
+        hash = self._hash_path(path)
+        return '%s/%s/%s/%s' % (self._META_PREFIX, hash[:2], hash[2:4],
+                                hash[4:])
 
     def _hash2key(self, hash):
         """
         Create blob key from content hash.
         """
-        return self._BLOB_PREFIX + '/' + hash
+        return '%s/%s/%s/%s' % (self._BLOB_PREFIX, hash[:2], hash[2:4],
+                                hash[4:])
 
     def _setting2key(self, setting):
         """

@@ -37,11 +37,13 @@ from nose.plugins.skip import SkipTest
 import coba.crypto
 
 
+GOT_GPGME = not coba.crypto._GPGME_ERROR
+
 def needs_gpgme(f):
     """
     Decorator to skip tests that require PyGPGME if it isn't available.
     """
-    if not coba.crypto._GPGME_ERROR:
+    if GOT_GPGME:
         return f
 
     @functools.wraps(f)

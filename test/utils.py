@@ -38,6 +38,7 @@ import tempfile
 import time
 
 from nose.plugins.skip import SkipTest
+from nose_parameterized import parameterized as _parameterized
 
 
 def _print_logfile_on_error(fun):
@@ -152,4 +153,22 @@ class TempDirTest(object):
 
     def get_user(self, path):
         return os.stat(self.path(path)).st_uid
+
+
+def parameterized(*pargs, **pkwargs):
+    """
+    Like ``nose_parameterized.parameterized`` but adds params to doc strings.
+
+    See https://github.com/wolever/nose-parameterized/issues/27.
+    """
+    def decorator(f):
+        f = _parameterized(*pargs, **pkwargs)(f)
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            for case in f(*args, **kwargs):
+                if f.__doc__:
+                    wrapper.__doc__ = f.__doc__.strip() + ' %r' % (case[1:],)
+                yield case
+        return wrapper
+    return decorator
 
