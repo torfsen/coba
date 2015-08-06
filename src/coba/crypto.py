@@ -32,6 +32,7 @@ any crypto operations will raise :py:class:`CryptoUnavailableError`.
 """
 
 import functools
+import io
 import os
 
 try:

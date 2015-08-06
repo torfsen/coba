@@ -393,5 +393,4 @@ class TestCoba(BaseTest):
         Crypto self-test during initialization.
         """
         self.watch(encryption_key='test@coba', key_dir=GPG_KEY_DIR)
-        import pdb; pdb.set_trace()
 

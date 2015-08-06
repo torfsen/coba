@@ -73,11 +73,16 @@ def without_gpgme(f):
 
 GPG_KEY_DIR = os.path.join(os.path.dirname(__file__), 'keys')
 
+
+def make_provider(recipient=None):
+    return coba.crypto.CryptoProvider(recipient, GPG_KEY_DIR)
+
+
 def with_provider(recipient=None):
     def decorator(f):
         @functools.wraps(f)
         def wrapper():
-            return f(coba.crypto.CryptoProvider(recipient, GPG_KEY_DIR))
+            return f(make_provider(recipient))
         return wrapper
     return decorator
 
@@ -86,7 +91,7 @@ def with_provider(recipient=None):
 @needs_gpgme
 def test_key_lookup_fingerprint(p):
     """
-    Test recipient key lookup via fingerprint.
+    Recipient key lookup via fingerprint.
     """
     pass
 
@@ -95,7 +100,7 @@ def test_key_lookup_fingerprint(p):
 @needs_gpgme
 def test_key_lookup_email(p):
     """
-    Test recipient key lookup via e-mail.
+    Recipient key lookup via e-mail.
     """
     pass
 
@@ -105,7 +110,7 @@ def test_key_lookup_email(p):
 @needs_gpgme
 def test_key_lookup_invalid(p):
     """
-    Test recipient key lookup with invalid data.
+    Recipient key lookup with invalid data.
     """
     pass
 
@@ -115,7 +120,7 @@ def test_key_lookup_invalid(p):
 @needs_gpgme
 def test_key_lookup_ambiguous(p):
     """
-    Test recipient key lookup with ambiguous data.
+    Recipient key lookup with ambiguous data.
     """
     pass
 
@@ -124,7 +129,7 @@ def test_key_lookup_ambiguous(p):
 @needs_gpgme
 def test_encryption_decryption(p):
     """
-    Test encryption and decryption.
+    Encryption and decryption.
     """
     data = b'foobar'
     encrypted_buffer = io.BytesIO()
@@ -141,7 +146,7 @@ def test_encryption_decryption(p):
 @needs_gpgme
 def test_encryption_without_recipient(p):
     """
-    Test encryption without a recipient.
+    Encryption without a recipient.
     """
     p.encrypt(None, None)
 
@@ -151,7 +156,7 @@ def test_encryption_without_recipient(p):
 @needs_gpgme
 def test_encryption_gpgme_error(p):
     """
-    Test exception wrapping during encryption.
+    Exception wrapping during encryption.
     """
     p.encrypt(None, None)
 
@@ -161,7 +166,7 @@ def test_encryption_gpgme_error(p):
 @needs_gpgme
 def test_decryption_gpgme_error(p):
     """
-    Test exception wrapping during decryption.
+    Exception wrapping during decryption.
     """
     p.decrypt(None, None)
 
@@ -171,7 +176,7 @@ def test_decryption_gpgme_error(p):
 @without_gpgme
 def test_encryption_no_gpgme(p):
     """
-    Test encryption without PyGPGME.
+    Encryption without PyGPGME.
     """
     p.encrypt(None, None)
 
@@ -181,10 +186,49 @@ def test_encryption_no_gpgme(p):
 @without_gpgme
 def test_decryption_no_gpgme(p):
     """
-    Test decryption without PyGPGME.
+    Decryption without PyGPGME.
     """
     p.decrypt(None, None)
 
+
+@with_provider('test@coba')
+def test_test(p):
+    """
+    Crypto self-test.
+    """
+    p.test()
+
+
+@raises(coba.crypto.CryptoError)
+@with_provider('test@coba')
+@without_gpgme
+def test_test_without_gpgme(p):
+    """
+    Crypto self-test without PyGPGME.
+    """
+    p.test()
+
+
+@raises(coba.crypto.CryptoError)
+@with_provider()
+def test_test_without_recipient(p):
+    """
+    Crypto self-test without recipient.
+    """
+    p.test()
+
+
+def test_recipient_none():
+    """
+    Recipient property.
+    """
+    ok(make_provider().recipient is None)
+    eq(make_provider('test@coba').recipient.uids[0].email, 'test@coba')
+
+
+#
+# Tests for ``is_encrypted``
+#
 
 def test_is_encrypted():
     """
