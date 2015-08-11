@@ -20,6 +20,22 @@ backed up. This feature avoids backing up files during ongoing modifications.
 **Default:** ``5``
 
 
+.. _config_encryption_key:
+
+``encryption_key``
+------------------
+String that identifies a GPG key used for encrypting backup data. If set to
+``null`` then backup data is not encrypted.
+
+This can be either a key fingerprint or a part of the key's user identity which
+identifies the key uniquely (e.g. the key's e-mail address if there is only one
+key for that address).
+
+**Default:** ``null`` (no encryption)
+
+See also :ref:`config_key_dir`.
+
+
 .. _config_ignored:
 
 ``ignored``
@@ -51,9 +67,20 @@ Any other use of ``**`` is invalid.
 Use ``\`` to escape a special character: ``\*`` matches ``*`` but not ``foo``.
 To match a single ``\`` use ``\\``.
 
-
 **Default:** ``["**/.*"/**]`` (this ignores all files and directories whose
 name starts with a dot)
+
+
+.. _config_key_dir:
+
+``key_dir``
+-----------
+Directory from which GPG keys for data encryption and decryption are loaded. If
+set to ``null`` then GPG's default directory is used.
+
+**Default:** ``null`` (use GPG's default)
+
+See also :ref:`config_encryption_key`.
 
 
 .. _config_log_dir:
@@ -120,8 +147,10 @@ The following example configuration file corresponds to the default configuratio
 ::
 
     {
+        "encryption_key": null,
         "idle_wait_time": 5,
         "ignored": ["**/.*/**"],
+        "key_dir": null,
         "log_level": 1,
         "pid_dir": "~/.coba",
         "storage_dir": "~/.coba/storage",

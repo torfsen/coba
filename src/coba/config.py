@@ -47,6 +47,18 @@ class Configuration(object):
     following configuration settings are available as instance
     attributes:
 
+    .. py:attribute:: encryption_key
+
+        String that identifies a GPG key used for encrypting backup
+        data. If set to ``None`` (default) then backup data is not
+        encrypted.
+
+        This can be either a key fingerprint or a part of the
+        key's user identity which identifies the key uniquely (e.g.
+        the key's e-mail address if there is only one key for that
+        address). The key is loaded from the GPG keyring in the
+        directory :py:attr:`key_dir`.
+
     .. py:attribute:: idle_wait_time
 
         Time (in seconds) that a file has to be idle after a
@@ -58,7 +70,14 @@ class Configuration(object):
         Files that should be ignored. This is a list of patterns, a file
         that matches at least one of these patterns is ignored by Coba.
         The syntax for the patterns is that of
-        :py:func:`coba.utils.match_path`.
+        :py:func:`coba.utils.match_path`. Note that Coba's storage
+        directory is automatically ignored.
+
+    .. py:attribute:: key_dir
+
+        Directory from which GPG keys for data encryption and decryption
+        are loaded. See :py:attr:`encryption_key`. If set to ``None``
+        (default) then GPG's default directory is used.
 
     .. py:attribute:: log_dir
 
@@ -90,7 +109,8 @@ class Configuration(object):
         directories or their subdirectories are backed up after they
         have been modified. The directories should be disjoint, i.e.
         no directory in the list should be contained in another
-        directory in the list.
+        directory in the list. By default, the list consists of the
+        user's home directory.
 
     In addition, the following configuration values are automatically
     derived from the other settings and can only be read:
@@ -108,8 +128,10 @@ class Configuration(object):
         """
         home = expand_path('~')
         coba_dir = os.path.join(home, '.coba')
+        self.encryption_key = None
         self.idle_wait_time = 5
         self.ignored = ['**/.*/**']
+        self.key_dir = None
         self.log_dir = os.path.join(coba_dir, 'log')
         self.log_level = 1
         self.pid_dir = coba_dir
@@ -152,10 +174,17 @@ class Configuration(object):
         else:
             with io.open(path, 'r', encoding='utf8') as f:
                 data = json.load(f)
-        data['ignored'] = [expand_path(p) for p in data['ignored']]
-        data['pid_dir'] = expand_path(data['pid_dir'])
-        data['storage_dir'] = expand_path(data['storage_dir'])
-        data['watched_dirs'] = [expand_path(p) for p in data['watched_dirs']]
+        if 'ignored' in data:
+            data['ignored'] = [expand_path(p) for p in data['ignored']]
+        if 'key_dir' in data:
+            data['key_dir'] = expand_path(data['key_dir'])
+        if 'pid_dir' in data:
+            data['pid_dir'] = expand_path(data['pid_dir'])
+        if 'storage_dir' in data:
+            data['storage_dir'] = expand_path(data['storage_dir'])
+        if 'watched_dirs' in data:
+            data['watched_dirs'] = [expand_path(p) for p in
+                                    data['watched_dirs']]
         return cls(**data)
 
     def save(self, path=None):

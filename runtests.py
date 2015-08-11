@@ -33,9 +33,12 @@ import sys
 import nose
 
 
-argv = sys.argv[:]
-argv.insert(1, '--nocapture')  # The daemon package doesn't like nose
-                               # capturing STDOUT.
+argv = [sys.argv[0]] + [
+    '--with-coverage',
+    '--cover-erase',
+    '--cover-package=coba',
+    '--cover-html',
+] + sys.argv[1:]
 
 nose.main(argv=argv)
 

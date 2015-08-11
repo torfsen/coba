@@ -16,6 +16,7 @@ because your backups are too old.
     installation
     configuration
     usage
+    security
     development
     license
 

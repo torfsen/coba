@@ -43,6 +43,7 @@ import time
 import pathlib
 
 from .config import Configuration
+from .crypto import CryptoError, CryptoProvider
 from .utils import make_dirs, normalize_path, sha1, tail, to_json
 from .watch import Service
 from .warnings import (GroupMismatchWarning, NoSuchGroupWarning,
@@ -412,7 +413,15 @@ class Coba(object):
         make_dirs(self.config.log_dir)
         make_dirs(self.config.pid_dir)
         driver = local_storage_driver(self.config.storage_dir)
-        self.store = Store(driver, 'coba')
+        crypto_provider = CryptoProvider(self.config.encryption_key,
+                                         self.config.key_dir)
+        if self.config.encryption_key:
+            try:
+                crypto_provider.test()
+            except CryptoError as e:
+                raise CryptoError('Encryption is enabled but crypto self-' +
+                                  'test failed: %s' % e)
+        self.store = Store(driver, 'coba', crypto_provider)
 
         def backup(path):
             self.file(path).backup()

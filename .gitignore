@@ -1,8 +1,13 @@
+/.coverage
+/.tox
 /build/
+/cover/
 /dist/
-/venv/
-/src/coba.egg-info/
 /docs/_build/
+/src/coba.egg-info/
+/test/keys/random_seed
+/venv/
 
 *.swp
 *.pyc
+*.gpg~

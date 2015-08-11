@@ -27,9 +27,10 @@ are created without a home directory and cannot login. The
 Since non-privileged users cannot change file ownership the tests that need to
 modify file owners need to be run using ``sudo``. Tests which require these
 privileges are collected in ``test/test_sudo.py``, so you can run them
-selectively::
+selectively. Note that you need to explicitly specify the Python installed in
+your virtual environment when using ``sudo``::
 
-    sudo ./runtests.py test/test_sudo.py
+    sudo venv/bin/python runtests.py test/test_sudo.py
 
 .. note::
     If the test users or groups don't exist or if the tests are run without
@@ -45,6 +46,7 @@ API Reference
     coba_cli
     coba_compat
     coba_config
+    coba_crypto
     coba_storage
     coba_utils
     coba_warnings

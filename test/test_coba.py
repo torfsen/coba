@@ -39,14 +39,16 @@ import pwd
 import stat
 
 from nose.tools import (eq_ as eq, ok_ as ok, assert_almost_equal,
-                        assert_not_almost_equal)
+                        assert_not_almost_equal, raises)
 from nose.plugins.skip import SkipTest
 
 from coba import Coba
 from coba.config import Configuration
+from coba.crypto import CryptoError
 from coba.utils import sha1
 
 from .utils import TempDirTest
+from .test_coba_crypto import GPG_KEY_DIR, without_gpgme
 
 
 # Look up Coba test users and groups. See the scripts ``create_test_users.sh``
@@ -73,7 +75,6 @@ class BaseTest(TempDirTest):
         if self.coba:
             self.coba.stop(block=5)
         super(BaseTest, self).teardown()
-
 
     def watch(self, *args, **kwargs):
         self.config_args.update(kwargs)
@@ -389,4 +390,12 @@ class TestCoba(BaseTest):
         eq(revs[0].size, 1)
         eq(revs[1].size, 2)
         eq(revs[2].size, 3)
+
+    @raises(CryptoError)
+    @without_gpgme
+    def test_crypto_self_test(self):
+        """
+        Crypto self-test during initialization.
+        """
+        self.watch(encryption_key='test@coba', key_dir=GPG_KEY_DIR)
 
