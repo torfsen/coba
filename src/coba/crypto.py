@@ -211,9 +211,9 @@ class CryptoProvider(object):
 
 def is_encrypted(x):
     """
-    Check if a string or file has been encrypted using GPG.
+    Check if data has been encrypted using GPG.
 
-    ``x`` is either a string or an open file-like object. It is checked
+    ``x`` is either bytes or an open file-like object. It is checked
     whether ``x`` contains GPG-encrypted data.
 
     The actual check is only a very simple heuristic: The first byte of
@@ -229,7 +229,7 @@ def is_encrypted(x):
     if not x:
         return False
     try:
-        # Assume string
+        # Assume bytes
         c = x[0]
     except TypeError:
         # Assume file
@@ -238,5 +238,6 @@ def is_encrypted(x):
             # EOF
             return False
         x.seek(-1, os.SEEK_CUR)
-    return ord(c) in (0xc1, 0x84, 0x85, 0x86, 0x87)
+        c = ord(c)
+    return c in (0xc1, 0x84, 0x85, 0x86, 0x87)
 

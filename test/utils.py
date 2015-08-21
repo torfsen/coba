@@ -29,7 +29,6 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 from future.builtins import *
 from future.builtins.disabled import *
-from future.utils import raise_
 
 import errno
 import inspect
@@ -76,7 +75,7 @@ def _print_logfile_on_error(fun):
             except IOError as e:
                 pass
             print('===== END OF LOG FILE CONTENTS =====\n')
-            raise_(*exc_info)
+            raise exc_info[1].with_traceback(exc_info[2])
     return wrapper
 
 

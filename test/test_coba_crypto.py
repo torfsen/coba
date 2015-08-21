@@ -235,11 +235,12 @@ def test_is_encrypted():
     Test recognition of OpenPGP packet data.
     """
     for case in (0xc1, 0x84, 0x85, 0x86, 0x87):
-        ok(coba.crypto.is_encrypted(chr(case)))
-        buf = io.BytesIO(chr(case))
+        byte = bytes([case])
+        ok(coba.crypto.is_encrypted(byte))
+        buf = io.BytesIO(byte)
         ok(coba.crypto.is_encrypted(buf))
         eq(buf.tell(), 0)
-    for case in ['', 'foo']:
+    for case in [b'', b'foo']:
         ok(not coba.crypto.is_encrypted(case))
         buf = io.BytesIO(case)
         ok(not coba.crypto.is_encrypted(buf))
