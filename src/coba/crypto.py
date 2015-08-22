@@ -230,7 +230,8 @@ def is_encrypted(x):
         return False
     try:
         # Assume bytes
-        c = x[0]
+        x[0]                 # Force TypeError for files and streams
+        c = bytearray(x)[0]  # Py2/3 compatible extraction of int
     except TypeError:
         # Assume file
         c = x.read(1)
