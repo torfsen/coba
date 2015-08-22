@@ -370,7 +370,7 @@ class Revision(object):
         The hash uniquely identifies the revision among all revisions of
         the same file.
         """
-        return sha1(to_json(self))
+        return sha1(to_json(self).encode('utf8'))
 
     def __eq__(self, other):
         """

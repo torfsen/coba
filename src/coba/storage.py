@@ -272,7 +272,7 @@ class Store(object):
         Returns the salt as a Unicode string.
         """
         path = str(normalize_path(path))
-        hash = sha1(path)
+        hash = sha1(path.encode('utf8'))
         key = '%s/%s/%s' % (self._SALT_PREFIX, hash[:2], hash[2:4])
         try:
             salts = json.loads(self._get_string(key))

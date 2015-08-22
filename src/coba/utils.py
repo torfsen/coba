@@ -193,14 +193,14 @@ def expand_path(path):
     return os.path.expandvars(os.path.expanduser(path))
 
 
-def sha1(s, encoding='utf-8'):
+def sha1(b):
     """
-    SHA1 hex digest of a string.
+    SHA1 hex digest of bytes.
 
-    The string is encoded via the given encoding before hashing.
+    The return value is the hex digest as a Unicode string.
     """
     hasher = hashlib.sha1()
-    hasher.update(s.encode(encoding))
+    hasher.update(b)
     return hasher.hexdigest()
 
 

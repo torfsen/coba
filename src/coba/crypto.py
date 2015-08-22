@@ -85,7 +85,7 @@ class CryptoGPGMEError(CryptoError):
 
         ``cause`` is an instance of :py:class:`gpgme.GpgmeError`.
         """
-        super(CryptoGPGMEError, self).__init__(cause.message)
+        super(CryptoGPGMEError, self).__init__(cause.strerror)
         self.cause = cause
 
 
@@ -197,7 +197,7 @@ class CryptoProvider(object):
         """
         if not self._recipient:
             raise CryptoError('Cannot test crypto if no recipient is set.')
-        plain = io.BytesIO('foobar')
+        plain = io.BytesIO(b'foobar')
         cipher = io.BytesIO()
         self.encrypt(plain, cipher)
         if plain.getvalue() == cipher.getvalue():
