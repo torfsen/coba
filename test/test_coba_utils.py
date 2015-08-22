@@ -30,7 +30,6 @@ from __future__ import (absolute_import, division, print_function,
 from future.builtins import *
 from future.builtins.disabled import *
 
-import codecs
 import contextlib
 import os.path
 import tempfile
@@ -151,7 +150,7 @@ def temp_file(content=''):
     f = tempfile.NamedTemporaryFile(delete=False)
     f.close()
     try:
-        with codecs.open(f.name, 'w+', encoding='utf8') as g:
+        with open(f.name, 'w+', encoding='utf8') as g:
             g.write(content)
             g.seek(0)
             yield g
