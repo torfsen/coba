@@ -25,6 +25,11 @@
 Tests for ``coba.cli``.
 """
 
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+from future.builtins import *
+from future.builtins.disabled import *
+
 import os
 import os.path
 import re
@@ -41,7 +46,7 @@ import coba.cli
 from coba.config import Configuration
 from coba.utils import sha1
 
-from utils import TempDirTest
+from .utils import TempDirTest
 
 
 def assert_matches(pattern, string):

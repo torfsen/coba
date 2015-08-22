@@ -235,13 +235,20 @@ def test_is_encrypted():
     Test recognition of OpenPGP packet data.
     """
     for case in (0xc1, 0x84, 0x85, 0x86, 0x87):
-        ok(coba.crypto.is_encrypted(chr(case)))
-        buf = io.BytesIO(chr(case))
-        ok(coba.crypto.is_encrypted(buf))
-        eq(buf.tell(), 0)
-    for case in ['', 'foo']:
-        ok(not coba.crypto.is_encrypted(case))
+        byte = bytes(bytearray([case]))
+        ok(coba.crypto.is_encrypted(byte),
+           'Encryption of %r not detected.' % byte)
+        buf = io.BytesIO(byte)
+        ok(coba.crypto.is_encrypted(buf),
+           'Encryption of %r in file not detected.' % byte)
+        eq(buf.tell(), 0,
+           'File pointer was not reset from %d for %r.' % (buf.tell(), byte))
+    for case in [b'', b'foo']:
+        ok(not coba.crypto.is_encrypted(case),
+           'False positive %r.' % case)
         buf = io.BytesIO(case)
-        ok(not coba.crypto.is_encrypted(buf))
-        eq(buf.tell(), 0)
+        ok(not coba.crypto.is_encrypted(buf),
+           'False positive %r in file.' % case)
+        eq(buf.tell(), 0,
+           'File pointer was not reset from %d for %r.' % (buf.tell(), byte))
 

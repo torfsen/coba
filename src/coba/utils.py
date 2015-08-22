@@ -21,10 +21,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-
 """
 Various utilities.
 """
+
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+from future.builtins import *
+from future.builtins.disabled import *
 
 import errno
 import hashlib
@@ -189,16 +193,18 @@ def expand_path(path):
     return os.path.expandvars(os.path.expanduser(path))
 
 
-def sha1(s):
+def sha1(b):
     """
-    SHA1 hex digest of a string.
+    SHA1 hex digest of bytes.
+
+    The return value is the hex digest as a Unicode string.
     """
     hasher = hashlib.sha1()
-    hasher.update(s)
+    hasher.update(b)
     return hasher.hexdigest()
 
 
-def tail(f, n=10):
+def tail(f, n=10, encoding=None):
     """
     Return lines from the end of a file.
 
@@ -207,7 +213,14 @@ def tail(f, n=10):
     Returns a list of the last ``n`` lines in the file, or less if the
     file contains less than ``n`` lines. Newline characters are not
     removed.
+
+    If ``encoding`` is not given the file's ``encoding`` attribute is
+    tried. If that isn't set either then a :py:class:`ValueError` is
+    raised.
     """
+    encoding = encoding or getattr(f, 'encoding', None)
+    if encoding is None:
+        raise ValueError('No encoding was specified.')
     lines = []
     try:
         mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
@@ -217,8 +230,8 @@ def tail(f, n=10):
     try:
         j = mm.size()
         while len(lines) < n and j > 0:
-            i = mm.rfind('\n', 0, j - 1)
-            lines.append(mm[i + 1:j])
+            i = mm.rfind('\n'.encode(encoding), 0, j - 1)
+            lines.append(mm[i + 1:j].decode(encoding))
             j = i + 1
         lines.reverse()
         return lines
@@ -239,7 +252,7 @@ class _JSONEncoder(json.JSONEncoder):
             return obj._to_json()
         except AttributeError:
             pass
-        return super(_JSONEncoder, self).default(obj)
+        return super().default(obj)
 
 
 def to_json(obj):

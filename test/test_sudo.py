@@ -37,6 +37,11 @@ test users and groups are not available then the tests are automatically
 skipped.
 """
 
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+from future.builtins import *
+from future.builtins.disabled import *
+
 import errno
 import functools
 import grp
@@ -48,8 +53,9 @@ from nose.tools import eq_ as eq, ok_ as ok
 from nose.plugins.skip import SkipTest
 from watchdog.events import FileModifiedEvent
 
-from coba.warnings import (GroupMismatchWarning, NoSuchGroupWarning,
-                           NoSuchUserWarning, UserMismatchWarning)
+from coba.warnings import (CobaWarning, GroupMismatchWarning,
+                           NoSuchGroupWarning, NoSuchUserWarning,
+                           UserMismatchWarning)
 
 from .test_coba import BaseTest, user_a, user_b, group_a, group_b
 from .test_watchdog import (RecordingEventHandler, temp_dir, create_file,
@@ -67,12 +73,13 @@ def warns(cls):
     def decorator(f):
         @functools.wraps(f)
         def wrapper(*args, **kwargs):
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
+            with warnings.catch_warnings(record=True) as ws:
+                warnings.simplefilter("always", CobaWarning)
                 result = f(*args, **kwargs)
-            assert len(w) == 1, ('Expected one warning, but %d were issued.' %
-                                 len(w))
-            cat = w[0].category
+            if not len(ws) == 1:
+                raise AssertionError('Expected one warning, but got %d: %r' %
+                                     (len(ws), [str(w.message) for w in ws]))
+            cat = ws[0].category
             if not issubclass(cat, cls):
                 raise AssertionError(('Expected warning of category %s but ' +
                                      'got one of %s.') % (cls.__name__,

@@ -27,8 +27,14 @@ Data storage based on LibCloud_.
 .. _LibCloud: https://libcloud.apache.org
 """
 
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+from future.builtins import *
+from future.builtins.disabled import *
+
 import binascii
-import gzip
+import io
+import json
 import hashlib
 import io
 import json
@@ -43,13 +49,15 @@ from . import Revision
 from .crypto import is_encrypted
 from .utils import (binary_file_iterator, make_dirs, normalize_path, sha1,
                     to_json)
-from .compat import pbkdf2_hmac
+from .compat import fix_libcloud, pbkdf2_hmac
 
 
 __all__ = [
     'local_storage_driver',
     'Store',
 ]
+
+fix_libcloud()
 
 
 def _upload_from_file(container, objname, f):
@@ -153,18 +161,18 @@ def _download_to_temp_file(container, objname):
     return temp_file
 
 
-def _compress_string(s):
+def _compress_bytes(b):
     """
-    Compress a string using zlib.
+    Compress bytes using zlib.
     """
-    return zlib.compress(s)
+    return zlib.compress(b)
 
 
-def _decompress_string(s):
+def _decompress_bytes(b):
     """
     Decompress a string using zlib.
     """
-    return zlib.decompress(s)
+    return zlib.decompress(b)
 
 
 def _make_salt(n=64):
@@ -174,7 +182,19 @@ def _make_salt(n=64):
     Returns a Unicode string containing ``n`` secure random bytes
     encoded as a hex string.
     """
-    return unicode(binascii.hexlify(os.urandom(n)))
+    return binascii.hexlify(os.urandom(n)).decode('ascii')
+
+
+def _chunk(seq, size):
+    """
+    Iterate over a sequence in chunks.
+
+    Yields subsequences of ``seq`` with ``size`` elements each. If the
+    number of elements in ``seq`` is not a multiple of ``size`` then the
+    last subsequence yielded will have less than ``size`` elements.
+    """
+    for pos in range(0, len(seq), size):
+        yield seq[pos:pos + size]
 
 
 class Store(object):
@@ -246,33 +266,41 @@ class Store(object):
                              self._format_version)
 
     def _get_path_salt(self, path):
+        """
+        Get a path's salt.
+
+        Returns the salt as a Unicode string.
+        """
         path = str(normalize_path(path))
-        hash = sha1(path)
+        hash = sha1(path.encode('utf8'))
         key = '%s/%s/%s' % (self._SALT_PREFIX, hash[:2], hash[2:4])
         try:
-            salts = json.loads(self._get_data(key))
+            salts = json.loads(self._get_string(key))
         except KeyError:
             salts = {}
         try:
             return salts[path]
         except KeyError:
             salts[path] = salt = _make_salt(self._SALT_LENGTH)
-            self._put_data(key, to_json(salts))
+            self._put_string(key, to_json(salts))
             return salt
 
     def _hash_path(self, path):
         path = str(normalize_path(path))
         salt = self._get_path_salt(path)
-        return self._salted_hash(path, salt)
+        return self._salted_hash(path.encode('utf8'), salt.encode('utf8'))
 
     def _salted_hash(self, s, salt):
         """
-        Hash a string using a cryptographically secure hash function.
+        Hash bytes using a cryptographically secure hash function.
+
+        ``s`` are the bytes to be hashed. The salt ``salt`` is also
+        given as bytes.
 
         Returns a Unicode string with the hash encoded as a hex string.
         """
         h = pbkdf2_hmac(self._HASH_ALGO, s, salt, self._HASH_ROUNDS)
-        return unicode(binascii.hexlify(h))
+        return binascii.hexlify(h).decode('ascii')
 
     def _path2key(self, path):
         """
@@ -301,7 +329,7 @@ class Store(object):
 
         Returns the setting's value.
         """
-        self._put_raw_data(self._setting2key(name), to_json(value))
+        self._put_raw_string(self._setting2key(name), to_json(value))
         return value
 
     def _get_setting(self, name):
@@ -311,7 +339,7 @@ class Store(object):
         Raises a :py:class:`KeyError` if the setting does not exist.
         """
         try:
-            return json.loads(self._get_raw_data(self._setting2key(name)))
+            return json.loads(self._get_raw_string(self._setting2key(name)))
         except KeyError:
             raise KeyError(name)
 
@@ -321,7 +349,7 @@ class Store(object):
         """
         key = self._path2key(path)
         try:
-            data = json.loads(self._get_data(key))
+            data = json.loads(self._get_string(key))
         except KeyError:
             return []
         path = data['path']
@@ -340,7 +368,7 @@ class Store(object):
             'path': path,
             'revisions': revisions,
         }
-        self._put_data(key, to_json(data))
+        self._put_string(key, to_json(data))
 
     def append_revision(self, path, *args, **kwargs):
         """
@@ -409,20 +437,20 @@ class Store(object):
         temp_file.seek(0)
         return temp_file
 
-    def _encrypt_string(self, s):
+    def _encrypt_bytes(self, b):
         """
-        Encrypt a string.
+        Encrypt bytes.
         """
         output = io.BytesIO()
-        self.crypto_provider.encrypt(io.BytesIO(s), output)
+        self.crypto_provider.encrypt(io.BytesIO(b), output)
         return output.getvalue()
 
-    def _decrypt_string(self, s):
+    def _decrypt_bytes(self, b):
         """
-        Decrypt a string.
+        Decrypt bytes.
         """
         output = io.BytesIO()
-        self.crypto_provider.decrypt(io.BytesIO(s), output)
+        self.crypto_provider.decrypt(io.BytesIO(b), output)
         return output.getvalue()
 
     def get_content(self, hash):
@@ -450,41 +478,65 @@ class Store(object):
         finally:
             temp_file.close()
 
-    def _put_raw_data(self, key, value):
+    def _put_raw_bytes(self, key, value):
         """
-        Put a raw data into the store.
+        Put a raw bytes into the store.
         """
-        self._container.upload_object_via_stream(value, key)
+        self._container.upload_object_via_stream(_chunk(value, 1024), key)
 
-    def _get_raw_data(self, key):
+    def _get_raw_bytes(self, key):
         """
-        Get a raw data from the store.
+        Get a raw bytes from the store.
         """
         try:
             obj = self._container.get_object(key)
         except libcloud.storage.types.ObjectDoesNotExistError:
             raise KeyError(key)
-        return ''.join(obj.as_stream())
+        return b''.join(obj.as_stream())
 
-    def _get_data(self, key):
+    def _put_raw_string(self, key, value):
+        """
+        Encode string to UTF-8 and store it.
+        """
+        self._put_raw_bytes(key, value.encode('utf8'))
+
+    def _get_raw_string(self, key):
+        """
+        Get UTF-8 encoded data and decode it.
+        """
+        return self._get_raw_bytes(key).decode('utf8')
+
+    def _get_bytes(self, key):
         """
         Get data from the store and decompress/decrypt it.
         """
-        data = self._get_raw_data(key)
+        data = self._get_raw_bytes(key)
         if is_encrypted(data):
-            return self._decrypt_string(data)
+            return self._decrypt_bytes(data)
         else:
-            return _decompress_string(data)
+            return _decompress_bytes(data)
 
-    def _put_data(self, key, value):
+    def _put_bytes(self, key, value):
         """
         Compress/encrypt data and store it.
         """
         if self.crypto_provider.recipient:
-            value = self._encrypt_string(value)
+            value = self._encrypt_bytes(value)
         else:
-            value = _compress_string(value)
-        self._put_raw_data(key, value)
+            value = _compress_bytes(value)
+        self._put_raw_bytes(key, value)
+
+    def _put_string(self, key, value):
+        """
+        Encode string via UTF-8 and store it.
+        """
+        self._put_bytes(key, value.encode('utf8'))
+
+    def _get_string(self, value):
+        """
+        Get UTF-8 encoded data and decode it.
+        """
+        return self._get_bytes(value).decode('utf8')
 
 
 def local_storage_driver(path):

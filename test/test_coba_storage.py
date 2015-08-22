@@ -25,8 +25,12 @@
 Tests for ``coba.storage``.
 """
 
-import cStringIO
-import functools
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+from future.builtins import *
+from future.builtins.disabled import *
+
+import io
 import os
 import os.path
 import shutil
@@ -40,8 +44,8 @@ from coba.crypto import CryptoProvider, is_encrypted
 from coba.storage import *
 from coba.utils import sha1
 
-from test_coba_crypto import GOT_GPGME, GPG_KEY_DIR, needs_gpgme
-from utils import parameterized
+from .test_coba_crypto import GOT_GPGME, GPG_KEY_DIR, needs_gpgme
+from .utils import parameterized
 
 
 def _fake_revision(store, path):
@@ -91,8 +95,8 @@ class TestRevisionStore(object):
         Storing and retrieving content.
         """
         store = self.make_store(recipient)
-        content = 'foobar'
-        hash = store.put_content(cStringIO.StringIO(content))
+        content = b'foobar'
+        hash = store.put_content(io.BytesIO(content))
         eq(hash, sha1(content))
         eq(store.get_content(hash).read(), content)
 
@@ -126,8 +130,7 @@ class TestRevisionStore(object):
         store = self.make_store('test@coba')
         p = '/foo/bar'
         rev = store.append_revision(p, time.time(), 1, 2, 3, 4, 5, 6, 7, 8)
-        content = 'foobar'
-        store.put_content(cStringIO.StringIO(content))
+        store.put_content(io.BytesIO(b'foobar'))
         for d in [Store._META_PREFIX, Store._BLOB_PREFIX, Store._SALT_PREFIX]:
             for root, filenames, _ in os.walk(os.path.join(self.path, d)):
                 for filename in filenames:

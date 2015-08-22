@@ -32,12 +32,22 @@ This module contains code to ease the transition between Python 2 and
 Python 3.
 """
 
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+from future.builtins import *
+from future.builtins.disabled import *
+
+import io
+import os.path
+import shutil
 import stat
+import sys
+import tempfile
 
 from backports.pbkdf2 import pbkdf2_hmac
 
 
-__all__ = ['filemode', 'pbkdf2_hmac']
+__all__ = ['filemode', 'fix_libcloud', 'pbkdf2_hmac']
 
 
 # The following code is taken from ``stat.py`` of Python 3.4, Copyright
@@ -86,4 +96,56 @@ def filemode(mode):
     return "".join(perm)
 
 # End of the code taken from ``stat.py`` of Python 3.4.
+
+
+def fix_libcloud():
+    """
+    Fixes for Python 2/3 compatibility problems in LibCloud.
+
+    This monkey-patches the :py:mod:`libcloud` package. Modules that
+    should be fixed must be imported before this function is called.
+    """
+    if 'libcloud.storage.drivers.local' in sys.modules:
+
+        # The following is a fix for issue LIBCLOUD-725, see
+        # https://issues.apache.org/jira/browse/LIBCLOUD-725.
+
+        from libcloud.storage.drivers.local import (LocalStorageDriver as L,
+                                                    LockLocalStorage)
+        from libcloud.utils.files import read_in_chunks
+
+        def upload_object_via_stream(self, iterator, container, object_name,
+                                     extra=None):
+            path = self.get_container_cdn_url(container, check=True)
+            obj_path = os.path.join(path, object_name)
+            base_path = os.path.dirname(obj_path)
+            self._make_path(base_path)
+            with LockLocalStorage(obj_path):
+                with open(obj_path, 'wb') as obj_file:
+                    for data in iterator:
+                        obj_file.write(data)
+            os.chmod(obj_path, int('664', 8))
+            return self._make_object(container, object_name)
+
+        def download_object_as_stream(self, obj, chunk_size=None):
+            path = self.get_object_cdn_url(obj)
+            with open(path, 'rb') as obj_file:
+                for data in read_in_chunks(obj_file, chunk_size=chunk_size):
+                    yield data
+
+        from libcloud.storage.drivers.local import LocalStorageDriver as L
+
+        temp_dir = tempfile.mkdtemp()
+        try:
+            driver = L(temp_dir)
+            container = driver.create_container('container')
+            try:
+                container.upload_object_via_stream(io.BytesIO(b'bar'), 'foo')
+            except TypeError:
+                # Issue not fixed, monkey-patch it
+                L.upload_object_via_stream = upload_object_via_stream
+                L.download_object_as_stream = download_object_as_stream
+                container.upload_object_via_stream(io.BytesIO(b'bar'), 'foo')
+        finally:
+            shutil.rmtree(temp_dir)
 

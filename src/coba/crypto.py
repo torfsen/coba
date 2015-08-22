@@ -85,7 +85,7 @@ class CryptoGPGMEError(CryptoError):
 
         ``cause`` is an instance of :py:class:`gpgme.GpgmeError`.
         """
-        super(CryptoGPGMEError, self).__init__(cause.message)
+        super(CryptoGPGMEError, self).__init__(cause.strerror)
         self.cause = cause
 
 
@@ -197,7 +197,7 @@ class CryptoProvider(object):
         """
         if not self._recipient:
             raise CryptoError('Cannot test crypto if no recipient is set.')
-        plain = io.BytesIO('foobar')
+        plain = io.BytesIO(b'foobar')
         cipher = io.BytesIO()
         self.encrypt(plain, cipher)
         if plain.getvalue() == cipher.getvalue():
@@ -211,9 +211,9 @@ class CryptoProvider(object):
 
 def is_encrypted(x):
     """
-    Check if a string or file has been encrypted using GPG.
+    Check if data has been encrypted using GPG.
 
-    ``x`` is either a string or an open file-like object. It is checked
+    ``x`` is either bytes or an open file-like object. It is checked
     whether ``x`` contains GPG-encrypted data.
 
     The actual check is only a very simple heuristic: The first byte of
@@ -229,8 +229,9 @@ def is_encrypted(x):
     if not x:
         return False
     try:
-        # Assume string
-        c = x[0]
+        # Assume bytes
+        x[0]                 # Force TypeError for files and streams
+        c = bytearray(x)[0]  # Py2/3 compatible extraction of int
     except TypeError:
         # Assume file
         c = x.read(1)
@@ -238,5 +239,6 @@ def is_encrypted(x):
             # EOF
             return False
         x.seek(-1, os.SEEK_CUR)
-    return ord(c) in (0xc1, 0x84, 0x85, 0x86, 0x87)
+        c = ord(c)
+    return c in (0xc1, 0x84, 0x85, 0x86, 0x87)
 

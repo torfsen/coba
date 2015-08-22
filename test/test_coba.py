@@ -25,6 +25,12 @@
 Tests for ``coba``.
 """
 
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+from future.builtins import *
+from future.builtins.disabled import *
+from future.utils import iteritems
+
 import errno
 import grp
 import hashlib
@@ -42,8 +48,8 @@ from coba.config import Configuration
 from coba.crypto import CryptoError
 from coba.utils import sha1
 
-from utils import TempDirTest
-from test_coba_crypto import GPG_KEY_DIR, without_gpgme
+from .utils import TempDirTest
+from .test_coba_crypto import GPG_KEY_DIR, without_gpgme
 
 
 # Look up Coba test users and groups. See the scripts ``create_test_users.sh``
@@ -145,7 +151,7 @@ class BaseTest(TempDirTest):
         revs = self.revs(f)
         eq(len(revs), 1)
         rev = revs[0]
-        for attr, value in rev_attrs.iteritems():
+        for attr, value in iteritems(rev_attrs):
             setattr(rev, attr, value)
         rev.restore(target=target, content=content, mtime=mtime, mode=mode,
                     user=user, group=group)
@@ -166,6 +172,10 @@ class BaseTest(TempDirTest):
             eq(self.get_user(f), new_user)
 
 
+def sha1_str(s):
+    return sha1(s.encode('utf8'))
+
+
 class TestCoba(BaseTest):
     """
     Tests for ``coba.Coba``.
@@ -176,7 +186,7 @@ class TestCoba(BaseTest):
         Backup due to creation of a file.
         """
         self.watch('foo')
-        hash = sha1(self.write('foo/bar', 'bazinga'))
+        hash = sha1_str(self.write('foo/bar', 'bazinga'))
         self.wait()
         revs = self.revs('foo/bar')
         eq(len(revs), 1)
@@ -187,7 +197,7 @@ class TestCoba(BaseTest):
         Backup due to creation of an empty file.
         """
         self.watch('foo')
-        hash = sha1(self.write('foo/bar'))
+        hash = sha1_str(self.write('foo/bar'))
         self.wait()
         revs = self.revs('foo/bar')
         eq(len(revs), 1)
@@ -199,7 +209,7 @@ class TestCoba(BaseTest):
         """
         self.write('foo/bar', 'bazinga')
         self.watch('foo')
-        hash = sha1(self.write('foo/bar', 'new'))
+        hash = sha1_str(self.write('foo/bar', 'new'))
         self.wait()
         revs = self.revs('foo/bar')
         eq(len(revs), 1)
@@ -209,7 +219,7 @@ class TestCoba(BaseTest):
         """
         Backup due to mtime modification.
         """
-        hash = sha1(self.write('foo/bar', 'bazinga'))
+        hash = sha1_str(self.write('foo/bar', 'bazinga'))
         self.watch('foo')
         self.set_mtime('foo/bar', 10)
         self.wait()
@@ -222,7 +232,7 @@ class TestCoba(BaseTest):
         """
         Backup due to mode modification.
         """
-        hash = sha1(self.write('foo/bar', 'bazinga'))
+        hash = sha1_str(self.write('foo/bar', 'bazinga'))
         self.set_mode('foo/bar', stat.S_IRUSR)
         self.watch('foo')
         mode = stat.S_IRUSR | stat.S_IWUSR
@@ -237,7 +247,7 @@ class TestCoba(BaseTest):
         """
         Backup due to file being moved within a watch.
         """
-        hash = sha1(self.write('foo/bar', 'bazinga'))
+        hash = sha1_str(self.write('foo/bar', 'bazinga'))
         self.watch('foo')
         self.move('foo/bar', 'foo/baz')
         self.wait()
@@ -249,7 +259,7 @@ class TestCoba(BaseTest):
         """
         Backup due to file being moved between watches.
         """
-        hash = sha1(self.write('foo/bar', 'bazinga'))
+        hash = sha1_str(self.write('foo/bar', 'bazinga'))
         self.watch('foo', 'foz')
         self.move('foo/bar', 'foz/bar')
         self.wait()
@@ -261,7 +271,7 @@ class TestCoba(BaseTest):
         """
         Backup due to file being moved into a watch.
         """
-        hash = sha1(self.write('foo/bar', 'bazinga'))
+        hash = sha1_str(self.write('foo/bar', 'bazinga'))
         self.watch('foz')
         self.move('foo/bar', 'foz/bar')
         self.wait()
@@ -273,7 +283,7 @@ class TestCoba(BaseTest):
         """
         Backup due to directory being moved within a watch.
         """
-        hash = sha1(self.write('foo/bar/qux', 'bazinga'))
+        hash = sha1_str(self.write('foo/bar/qux', 'bazinga'))
         self.watch('foo')
         self.move('foo/bar', 'foo/baz')
         self.wait()
@@ -285,7 +295,7 @@ class TestCoba(BaseTest):
         """
         Backup due to directory being moved between watches.
         """
-        hash = sha1(self.write('foo/bar/qux', 'bazinga'))
+        hash = sha1_str(self.write('foo/bar/qux', 'bazinga'))
         self.watch('foo', 'foz')
         self.move('foo/bar', 'foz/bar')
         self.wait()
@@ -297,7 +307,7 @@ class TestCoba(BaseTest):
         """
         Backup due to directory being moved into a watch.
         """
-        hash = sha1(self.write('foo/bar/qux', 'bazinga'))
+        hash = sha1_str(self.write('foo/bar/qux', 'bazinga'))
         self.watch('foz')
         self.move('foo/bar', 'foz/bar')
         self.wait()
@@ -347,7 +357,7 @@ class TestCoba(BaseTest):
         Restore a non-existing file without restoring its content.
         """
         self.watch()
-        hash = sha1(self.write('foo/bar', 'bazinga'))
+        hash = sha1_str(self.write('foo/bar', 'bazinga'))
         self.backup('foo/bar')
         revs = self.revs('foo/bar')
         eq(len(revs), 1)
@@ -361,7 +371,7 @@ class TestCoba(BaseTest):
         """
         self.watch('foo', ignored=['**/*.bar'])
         self.write('foo/bar.bar', 'bazinga')
-        hash = sha1(self.write('foo/bar.baz', 'bazinga'))
+        hash = sha1_str(self.write('foo/bar.baz', 'bazinga'))
         self.wait()
         eq(len(self.revs('foo/bar.bar')), 0)
         revs = self.revs('foo/bar.baz')

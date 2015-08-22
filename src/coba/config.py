@@ -25,8 +25,14 @@
 Coba's configuration management.
 """
 
-import codecs
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+from future.builtins import *
+from future.builtins.disabled import *
+from future.utils import iteritems
+
 import errno
+import io
 import json
 import os.path
 
@@ -131,7 +137,7 @@ class Configuration(object):
         self.pid_dir = coba_dir
         self.storage_dir = os.path.join(coba_dir, 'storage')
         self.watched_dirs = [home]
-        for key, value in kwargs.iteritems():
+        for key, value in iteritems(kwargs):
             if (not key.startswith('_')) and hasattr(self, key):
                 setattr(self, key, value)
             else:
@@ -166,7 +172,7 @@ class Configuration(object):
                     return cls()
                 raise
         else:
-            with codecs.open(path, 'r', encoding='utf8') as f:
+            with io.open(path, 'r', encoding='utf8') as f:
                 data = json.load(f)
         if 'ignored' in data:
             data['ignored'] = [expand_path(p) for p in data['ignored']]
@@ -188,9 +194,9 @@ class Configuration(object):
         If ``path`` is not given the default location is used.
         """
         path = path or self.default_location()
-        attrs = {key: value for key, value in self.__dict__.iteritems() if not
+        attrs = {key: value for key, value in iteritems(self.__dict__) if not
                  key.startswith('_')}
-        with codecs.open(path, 'w', encoding='utf8') as f:
+        with io.open(path, 'w', encoding='utf8') as f:
             json.dump(attrs, f)
 
     def is_ignored(self, path):
