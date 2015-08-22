@@ -329,6 +329,25 @@ def _original_streams():
         sys.stdin = stdin
 
 
+def _get_open_fds(path):
+    """
+    Get already open file descriptors.
+
+    Returns the open file descriptors for the given path.
+    """
+    path = os.path.realpath(path)
+    fds = []
+    for root, dirnames, filenames in os.walk('/proc/self/fd'):
+        for filename in filenames:
+            fullname = os.path.join(root, filename)
+            if not os.path.exists(fullname):
+                continue
+            target = os.path.realpath(fullname)
+            if target == path:
+                fds.append(int(filename))
+    return fds
+
+
 class Service(service.Service):
     """
     The Coba backup daemon.
@@ -348,6 +367,10 @@ class Service(service.Service):
         self._config = config
         self._observers = []
         self._init_logging()
+
+        # Workaround for a problem on some Python 3.4 versions, see
+        # https://alioth.debian.org/tracker/index.php?func=detail&aid=315147&group_id=100328&atid=413098
+        self.files_preserve.extend(_get_open_fds('/dev/urandom'))
 
     def start(self, *args, **kwargs):
         # `service.Service.start` crashes when `sys.stdout` doesn't have a
