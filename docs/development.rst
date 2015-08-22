@@ -9,9 +9,15 @@ The source code for Coba can be found `on GitHub
 
 Tests
 =====
-Use the ``runtests.py`` script to execute the tests. Please make sure to
-`create an issue <https://github.com/torfuspolymorphus/coba/issues>`_ if
-any of the tests fail.
+Coba uses tox_ for testing against all supported Python versions. Once you
+installed tox and interpreters for Python 2.7, 3.3 and 3.4 you can run the
+tests by simply executing
+
+::
+
+    tox
+
+.. _tox: https://tox.readthedocs.org
 
 
 Test User and Group
@@ -27,10 +33,17 @@ are created without a home directory and cannot login. The
 Since non-privileged users cannot change file ownership the tests that need to
 modify file owners need to be run using ``sudo``. Tests which require these
 privileges are collected in ``test/test_sudo.py``, so you can run them
-selectively. Note that you need to explicitly specify the Python installed in
-your virtual environment when using ``sudo``::
+selectively::
 
-    sudo venv/bin/python runtests.py test/test_sudo.py
+    sudo tox -- test/test_sudo.py
+
+Note that some files in the tox cache may now belong to root. To be able to
+run tests again as a non-root user, do the following::
+
+    sudo chown -R <USER> .tox
+    sudo chgrp -R <USER> .tox
+
+where ``<USER>`` is your usual non-root user account.
 
 .. note::
     If the test users or groups don't exist or if the tests are run without

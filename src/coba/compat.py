@@ -102,8 +102,8 @@ def fix_libcloud():
     """
     Fixes for Python 2/3 compatibility problems in LibCloud.
 
-    This monkey-patches the ``libcloud`` package. Modules that should
-    be fixed must be imported before this function is called.
+    This monkey-patches the :py:mod:`libcloud` package. Modules that
+    should be fixed must be imported before this function is called.
     """
     if 'libcloud.storage.drivers.local' in sys.modules:
 
