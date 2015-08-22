@@ -55,6 +55,16 @@ if not doc_lines:
 
 description = doc_lines[0].strip()
 long_description = ''.join(doc_lines[1:]).strip()
+requirements = """
+    apache-libcloud
+    backports.pbkdf2
+    click
+    future
+    pathlib
+    pqdict
+    service
+    watchdog
+""".split()
 
 setup(
     name='coba',
@@ -70,7 +80,11 @@ setup(
         "Intended Audience :: End Users/Desktop",
         "License :: OSI Approved :: MIT License",
         "Operating System :: POSIX",
+        "Programming Language :: Python :: 2",
         "Programming Language :: Python :: 2.7",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.3",
+        "Programming Language :: Python :: 3.4",
         "Topic :: System :: Archiving :: Backup",
     ],
 
@@ -79,7 +93,7 @@ setup(
 
     packages=find_packages('src'),
     package_dir={'': 'src'},
-    install_requires='click pathlib pqdict service watchdog'.split(),
+    install_requires=requirements,
 
     # Click CLI integration
     entry_points="""
