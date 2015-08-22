@@ -131,7 +131,7 @@ class File(object):
             most_recent = collections.OrderedDict()
             for rev in revs:
                 most_recent[rev.get_hash()] = rev
-            revs = most_recent.values()
+            revs = list(most_recent.values())
         return revs
 
     def __str__(self):
