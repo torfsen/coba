@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
 import collections
+import datetime
 import logging
 from pathlib import Path
+import shutil
 import threading
 import time
 
@@ -14,14 +16,6 @@ import watchdog.observers
 log = logging.getLogger(__name__)
 
 
-# When do we backup a file:
-#
-# 1) When it is inside a watched directory
-# 2) When it is not ignored
-# 3) When it has been modified but has not been modified for a bit (to
-#    avoid backups in the middle of longer operations)
-
-
 # Internally, ``Path`` instances are used for all file and directory paths. Raw
 # paths obtained from outside are converted at the point they are obtained at.
 # When external functions expect raw paths then ``Path`` instances are converted
@@ -30,6 +24,57 @@ log = logging.getLogger(__name__)
 
 # Seconds to wait for another modification before backing up a file
 IDLE_WAIT_SECONDS = 5
+
+
+class FileStore:
+    '''
+    An on-disk store for file versions.
+    '''
+    # Name of the special directory used to store file information
+    _BACKUP_DIR_NAME = '_coba'
+
+    def __init__(self, path):
+        '''
+        Constructor.
+
+        ``path`` is the base directory of the file store. If it doesn't
+        exist it is created.
+        '''
+        self._path = path
+        if not path.exists():
+            path.mkdir(parents=True)
+            log.debug('Created directory {} for file store'.format(path))
+            # TODO: We should put some persistent metadata at the root of the
+            #       store (e.g. store format version)
+        elif not path.is_dir():
+            raise ValueError('{} exists but is not a directory'.format(path))
+        else:
+            # TODO: Make sure this is a valid file store
+            pass
+
+    def _get_storage_dir(self, path):
+        '''
+        Get the storage directory for a path.
+        '''
+        path = path.resolve()
+        return self._path / str(path)[1:] / self._BACKUP_DIR_NAME
+
+    def put(self, path):
+        '''
+        Put a file into the store.
+        '''
+        storage_dir = self._get_storage_dir(path)
+        log.debug('Storing {} in {}'.format(path, storage_dir))
+        try:
+            storage_dir.mkdir(parents=True)
+        except FileExistsError:
+            pass
+        temp_path = storage_dir / 'incoming'
+        shutil.copy(str(path), str(temp_path))
+        mtime = datetime.datetime.fromtimestamp(temp_path.stat().st_mtime)
+        final_path = storage_dir / mtime.isoformat()
+        temp_path.rename(final_path)
+        log.debug('Stored {} as {}'.format(path, final_path))
 
 
 class DictQueue:
@@ -127,6 +172,10 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
 
     def dispatch(self, event):
         if event.is_directory:
+            # TODO: Think about directory renames/moves: The "deletion" part
+            #       is of no interest to us, but we need to handle the creation
+            #       of the target files -- do we get separate creation events
+            #       for these?
             return  # Ignore directory events
         super().dispatch(event)
 
@@ -158,6 +207,8 @@ if __name__ == '__main__':
     HERE = Path(__file__).resolve().parent
     SANDBOX = HERE / 'sandbox'
 
+    store = FileStore(HERE / 'test-store')
+
     observer = watchdog.observers.Observer()
     queue = FileQueue()
     handler = EventHandler(queue)
@@ -165,7 +216,7 @@ if __name__ == '__main__':
     observer.start()
     try:
         for path in queue:
-            log.info('Backing up {}'.format(path))
+            store.put(path)
     except KeyboardInterrupt:
         log.info('Exiting.')
 

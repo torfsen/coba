@@ -1,5 +1,6 @@
 /venv/
 /sandbox/
+/test-store/
 
 .*.swp
 
