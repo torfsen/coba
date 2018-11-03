@@ -168,6 +168,7 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
 
         ``queue`` is an instance of ``FileQueue``.
         '''
+        super().__init__()
         self._queue = queue
 
     def dispatch(self, event):
@@ -179,9 +180,8 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
             return  # Ignore directory events
         super().dispatch(event)
 
-    # In our tests, a newly created file always gets two events: first a
-    # creation event, then a modification event (even if the file is empty).
-    # Hence we ignore creation events.
+    def on_created(self, event):
+        self._register(Path(event.src_path))
 
     def on_modified(self, event):
         self._register(Path(event.src_path))
@@ -214,9 +214,15 @@ if __name__ == '__main__':
     handler = EventHandler(queue)
     observer.schedule(handler, str(SANDBOX), recursive=True)
     observer.start()
+    log.info('Watching {}'.format(SANDBOX))
     try:
         for path in queue:
             store.put(path)
     except KeyboardInterrupt:
-        log.info('Exiting.')
+        log.info('Received CTRL+C')
+    log.info('Stopping observer...')
+    observer.stop()
+    log.info('Waiting for observer to stop...')
+    observer.join()
+    log.info('Exiting.')
 
