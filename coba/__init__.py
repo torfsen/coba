@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 
 import collections
-import datetime
 import logging
 from pathlib import Path
-import shutil
 import threading
 import time
 
 import watchdog
 import watchdog.events
-import watchdog.observers
 
 
 log = logging.getLogger(__name__)
@@ -24,57 +21,6 @@ log = logging.getLogger(__name__)
 
 # Seconds to wait for another modification before backing up a file
 IDLE_WAIT_SECONDS = 5
-
-
-class FileStore:
-    '''
-    An on-disk store for file versions.
-    '''
-    # Name of the special directory used to store file information
-    _BACKUP_DIR_NAME = '_coba'
-
-    def __init__(self, path):
-        '''
-        Constructor.
-
-        ``path`` is the base directory of the file store. If it doesn't
-        exist it is created.
-        '''
-        self._path = path
-        if not path.exists():
-            path.mkdir(parents=True)
-            log.debug('Created directory {} for file store'.format(path))
-            # TODO: We should put some persistent metadata at the root of the
-            #       store (e.g. store format version)
-        elif not path.is_dir():
-            raise ValueError('{} exists but is not a directory'.format(path))
-        else:
-            # TODO: Make sure this is a valid file store
-            pass
-
-    def _get_storage_dir(self, path):
-        '''
-        Get the storage directory for a path.
-        '''
-        path = path.resolve()
-        return self._path / str(path)[1:] / self._BACKUP_DIR_NAME
-
-    def put(self, path):
-        '''
-        Put a file into the store.
-        '''
-        storage_dir = self._get_storage_dir(path)
-        log.debug('Storing {} in {}'.format(path, storage_dir))
-        try:
-            storage_dir.mkdir(parents=True)
-        except FileExistsError:
-            pass
-        temp_path = storage_dir / 'incoming'
-        shutil.copy(str(path), str(temp_path))
-        mtime = datetime.datetime.fromtimestamp(temp_path.stat().st_mtime)
-        final_path = storage_dir / mtime.isoformat()
-        temp_path.rename(final_path)
-        log.debug('Stored {} as {}'.format(path, final_path))
 
 
 class DictQueue:
@@ -194,35 +140,4 @@ class EventHandler(watchdog.events.FileSystemEventHandler):
         # watch. In that case, it generates no separate creation or
         # modification events for the destinations.
         self._register(Path(event.dest_path))
-
-
-if __name__ == '__main__':
-
-    formatter = logging.Formatter('%(created)f [%(levelname)s] %(message)s')
-    handler = logging.StreamHandler()
-    handler.setFormatter(formatter)
-    log.addHandler(handler)
-    log.setLevel(logging.DEBUG)
-
-    HERE = Path(__file__).resolve().parent
-    SANDBOX = HERE / 'sandbox'
-
-    store = FileStore(HERE / 'test-store')
-
-    observer = watchdog.observers.Observer()
-    queue = FileQueue()
-    handler = EventHandler(queue)
-    observer.schedule(handler, str(SANDBOX), recursive=True)
-    observer.start()
-    log.info('Watching {}'.format(SANDBOX))
-    try:
-        for path in queue:
-            store.put(path)
-    except KeyboardInterrupt:
-        log.info('Received CTRL+C')
-    log.info('Stopping observer...')
-    observer.stop()
-    log.info('Waiting for observer to stop...')
-    observer.join()
-    log.info('Exiting.')
 
