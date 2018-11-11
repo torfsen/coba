@@ -16,28 +16,18 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 
-__all__ = ['Store']
+__all__ = ['Store', 'Version']
 
 
 log = logging.getLogger(__name__)
 
 _Base = declarative_base()
-_Session = sessionmaker()
-
-
-@contextlib.contextmanager
-def _session_scope():
-    session = _Session()
-    try:
-        yield session
-    except:
-        session.rollback()
-        raise
-    finally:
-        session.close()
 
 
 class _Version(_Base):
+    '''
+    Internal ORM representation of a file version.
+    '''
     __tablename__ = 'versions'
 
     id = Column(Integer, primary_key=True)
@@ -49,6 +39,24 @@ class _Version(_Base):
         return '<{} id={} path="{}" hash="{}">'.format(self.__class__.__name__,
                                                        self.id, self.path,
                                                        self.hash)
+
+
+class Version:
+    '''
+    A version of a file.
+    '''
+    # TODO: Version.path should always be a pathlib.Path instance
+    def __init__(self, _version, store):
+        '''
+        Private constructor.
+        '''
+        self._version = _version
+        self._store = store
+
+    def __getattr__(self, attr):
+        if attr.startswith('_'):
+            raise AttributeError(attr)
+        return getattr(self._version, attr)
 
 
 def _make_absolute(p):
@@ -64,7 +72,6 @@ class Store:
     '''
     An on-disk store for file versions.
     '''
-
     def __init__(self, path):
         '''
         Constructor.
@@ -75,6 +82,7 @@ class Store:
         self.path = path
         self._cas = None
         self._engine = None
+        self._Session = None
 
     def __enter__(self):
         try:
@@ -100,7 +108,7 @@ class Store:
         url = 'sqlite:///' + str(self.path / 'coba.sqlite')
         self._engine = create_engine(url)
         _Base.metadata.create_all(self._engine, checkfirst=True)
-        _Session.configure(bind=self._engine)
+        self._Session = sessionmaker(bind=self._engine)
 
     def _close_db(self):
         log.debug('Closing database')
@@ -108,13 +116,24 @@ class Store:
             self._engine.dispose()
             self._engine = None
 
+    @contextlib.contextmanager
+    def _session_scope(self):
+        session = self._Session()
+        try:
+            yield session
+        except:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
     def put(self, path):
         '''
         Put a file into the store.
         '''
+        path = _make_absolute(path)
         # First make a temporary copy in case the original file is modified
         # while we're trying to put it into the store
-        path = _make_absolute(path)
         temp_copy = tempfile.NamedTemporaryFile(dir=str(self.path), delete=False)
         log.debug('Created temporary file {}'.format(temp_copy.name))
         try:
@@ -124,7 +143,7 @@ class Store:
             address = self._cas.put(temp_copy.name)
             log.debug('Stored content of {} in CAS at {}'.format(path,
                       address.abspath))
-            with _session_scope() as session:
+            with self._session_scope() as session:
                 version = _Version(path=str(path), hash=address.id)
                 session.add(version)
                 session.commit()
@@ -133,4 +152,17 @@ class Store:
         finally:
             os.unlink(temp_copy.name)
             log.debug('Removed temporary file {}'.format(temp_copy.name))
+        # TODO: This should return the stored version
+
+    def get_versions(self, path):
+        '''
+        Get the stored versions of file.
+
+        Yields an instance of ``Version`` for each stored version of the
+        given file.
+        '''
+        path = _make_absolute(path)
+        with self._session_scope() as session:
+            for _version in session.query(_Version).filter_by(path=str(path)):
+                yield Version(_version, self)
 
