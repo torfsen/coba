@@ -5,6 +5,7 @@
 #    pip-compile --output-file requirements.txt requirements.in
 #
 argh==0.26.2              # via watchdog
+click==7.0
 hashfs==0.7.1
 pathtools==0.1.2          # via watchdog
 pyyaml==3.13              # via watchdog

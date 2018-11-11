@@ -3,38 +3,48 @@
 import logging
 from pathlib import Path
 
+import click
 import watchdog.observers
 
-from .import EventHandler, FileQueue
+from .import EventHandler, FileQueue, __version__ as coba_version
 from .store import Store
 
 
-log = logging.getLogger()
-formatter = logging.Formatter('%(created)f [%(levelname)s] %(message)s')
-handler = logging.StreamHandler()
-handler.setFormatter(formatter)
-log.addHandler(handler)
-log.setLevel(logging.DEBUG)
+@click.group()
+def coba():
+    log = logging.getLogger('coba')
+    formatter = logging.Formatter('%(created)f [%(levelname)s] %(message)s')
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+    log.addHandler(handler)
+    log.setLevel(logging.DEBUG)
 
-BASE = Path(__file__).resolve().parent.parent
-SANDBOX = BASE / 'sandbox'
 
-queue = FileQueue()
-handler = EventHandler(queue)
+@coba.command()
+@click.argument('directory')
+def watch(directory):
+    directory = Path(directory)
+    queue = FileQueue()
+    handler = EventHandler(queue)
 
-with Store(BASE / 'test-store') as store:
-    observer = watchdog.observers.Observer()
-    observer.schedule(handler, str(SANDBOX), recursive=True)
-    observer.start()
-    log.info('Watching {}'.format(SANDBOX))
-    try:
-        for path in queue:
-            store.put(path)
-    except KeyboardInterrupt:
-        log.info('Received CTRL+C')
-    log.info('Stopping observer...')
-    observer.stop()
-    log.info('Waiting for observer to stop...')
-    observer.join()
+    base = Path(__file__).resolve().parent.parent
+    with Store(base / 'test-store') as store:
+        observer = watchdog.observers.Observer()
+        observer.schedule(handler, str(directory), recursive=True)
+        observer.start()
+        click.echo('Watching {}'.format(directory))
+        try:
+            for path in queue:
+                store.put(path)
+        except KeyboardInterrupt:
+            click.echo('Received CTRL+C')
+        click.echo('Stopping observer...')
+        observer.stop()
+        click.echo('Waiting for observer to stop...')
+        observer.join()
 
-log.info('Exiting.')
+    click.echo('Exiting.')
+
+
+coba()
+

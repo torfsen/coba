@@ -53,5 +53,8 @@ setup(
     keywords='backup',
     packages=find_packages('coba'),
     install_requires=install_requires,
-
+    entry_points='''
+        [console_scripts]
+        coba=coba.__main__:coba
+    ''',
 )
