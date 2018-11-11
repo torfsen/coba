@@ -8,5 +8,5 @@ argh==0.26.2              # via watchdog
 hashfs==0.7.1
 pathtools==0.1.2          # via watchdog
 pyyaml==3.13              # via watchdog
-sqlalchemy==1.2.13
-watchdog==0.8.3
+sqlalchemy==1.2.14
+watchdog==0.9.0

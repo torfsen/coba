@@ -10,6 +10,9 @@ import watchdog
 import watchdog.events
 
 
+__version__ = '0.0.1'
+
+
 log = logging.getLogger(__name__)
 
 

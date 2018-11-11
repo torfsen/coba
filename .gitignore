@@ -2,8 +2,10 @@
 /sandbox/
 /test-store/
 /.pytest_cache/
+/dist/
 
 __pycache__/
+*.egg-info/
 
 .*.swp
 
