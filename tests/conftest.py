@@ -7,11 +7,20 @@ import tempfile
 
 import pytest
 
+from coba.store import Store
+
 
 @pytest.fixture
 def temp_dir():
     with tempfile.TemporaryDirectory() as d:
         yield Path(d)
+
+
+@pytest.fixture
+def store():
+    with tempfile.TemporaryDirectory() as d:
+        with Store(Path(d)) as store:
+            yield store
 
 
 @contextlib.contextmanager

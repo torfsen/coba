@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
+import functools
 import logging
 from pathlib import Path
+import sys
 
 import click
 import watchdog.observers
@@ -14,18 +16,36 @@ from .utils import utc_to_local
 __all__ = ['coba']
 
 
+def _handle_errors(f):
+    @functools.wraps(f)
+    def wrapper(ctx, *args, **kwargs):
+        try:
+            return f(ctx, *args, **kwargs)
+        except Exception as e:
+            try:
+                log = ctx.obj['log']
+            except KeyError:
+                # Logging hasn't been set up, yet
+                sys.stderr.write('Error: {}\n'.format(e))
+            else:
+                log.exception(e)
+            sys.exit(1)
+    return wrapper
+
+
 @click.group()
 @click.option('--store', envvar='COBA_STORE')
 @click.pass_context
+@_handle_errors
 def coba(ctx, store):
     ctx.ensure_object(dict)
 
-    log = logging.getLogger('coba')
-    formatter = logging.Formatter('%(created)f [%(levelname)s] %(message)s')
+    ctx.obj['log'] = logging.getLogger('coba')
+    formatter = logging.Formatter('%(levelname)s: %(message)s')
     handler = logging.StreamHandler()
     handler.setFormatter(formatter)
-    log.addHandler(handler)
-    log.setLevel(logging.DEBUG)
+    ctx.obj['log'].addHandler(handler)
+    ctx.obj['log'].setLevel(logging.DEBUG)
 
     if store:
         store = Path(store)
@@ -38,6 +58,7 @@ def coba(ctx, store):
 @coba.command()
 @click.argument('directory')
 @click.pass_context
+@_handle_errors
 def watch(ctx, directory):
     directory = Path(directory)
     queue = FileQueue()
@@ -63,6 +84,7 @@ def watch(ctx, directory):
 @coba.command()
 @click.argument('path')
 @click.pass_context
+@_handle_errors
 def show(ctx, path):
     path = Path(path)
     with ctx.obj['store'] as store:
