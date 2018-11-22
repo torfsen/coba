@@ -3,6 +3,9 @@
 /test-store/
 /.pytest_cache/
 /dist/
+/htmlcov/
+
+/.coverage
 
 __pycache__/
 *.egg-info/

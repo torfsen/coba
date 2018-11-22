@@ -1,3 +1,4 @@
 pip-tools==2.0.2
 pytest==3.7.1
 sealedmock==1.0.1
+pytest-cov==2.6.0
