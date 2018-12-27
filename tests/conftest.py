@@ -4,6 +4,7 @@ import contextlib
 import os
 from pathlib import Path
 import tempfile
+import time
 
 import pytest
 
@@ -32,3 +33,17 @@ def working_dir(w):
     finally:
         os.chdir(old_dir)
 
+
+@contextlib.contextmanager
+def timezone(tz):
+    '''
+    Temporarily switch to a certain timezone.
+    '''
+    old_tz = os.environ.get('TZ', '')
+    os.environ['TZ'] = tz
+    time.tzset()
+    try:
+        yield
+    finally:
+        os.environ['TZ'] = old_tz
+        time.tzset()

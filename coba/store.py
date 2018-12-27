@@ -78,6 +78,28 @@ class Version:
             raise AttributeError(attr)
         return getattr(self._version, attr)
 
+    def restore(self, target_path=None, force=False):
+        '''
+        Restore this version.
+
+        If ``target_path`` is not given then the version is restored at
+        its original location.
+
+        If the target path already exists and is a directory then the
+        version's basename is appended to the path. If the path already
+        exists and is a file then a ``FileExistsError`` is raised,
+        unless ``force`` is true (in which case the existing file is
+        overwritten).
+
+        Returns the path at which the version was restored.
+        '''
+        if target_path:
+            target_path = make_path_absolute(target_path)
+            if target_path.is_dir():
+                target_path = target_path / self.path.name
+        else:
+            target_path = Path(self.path)
+        return self._store._restore(self._version, target_path, force)
 
     def __eq__(self, other):
         if not isinstance(other, self.__class__):
@@ -87,6 +109,12 @@ class Version:
         other_dict = {k: v for k, v in other._version.__dict__.items()
                       if not k.startswith('_')}
         return self_dict == other_dict
+
+    def __repr__(self):
+        return ('<{cls} id={id} path={path} '
+                + 'stored_at={stored_at:%Y-%m-%d/%H:%M:%S}>').format(
+               cls=self.__class__.__name__, id=self.id, path=self.path,
+               stored_at=self.stored_at)
 
 
 class Store:
@@ -191,9 +219,40 @@ class Store:
             os.unlink(temp_copy.name)
             log.debug('Removed temporary file {}'.format(temp_copy.name))
 
+    def _restore(self, _version, path, force):
+        '''
+        Restore a file to a previous version.
+
+        Not intended to be called directly. Use ``Version.restore``
+        instead.
+
+        ``_version`` is an instance of ``_Version`` that describes the
+        file to be restored.
+
+        ``path`` is the path at which the file is to be restored. Parent
+        directories are created as necessary.
+
+        If ``force`` is true then an existing file at ``path`` will be
+        replaced. If ``force`` is false then an existing file raises
+        a ``FileExistsError``.
+
+        Returns ``path``.
+        '''
+        if path.exists() and not force:
+            raise FileExistsError('"{}" already exists'.format(path))
+        address = self._cas.get(_version.hash)
+        if not address:
+            raise ValueError('Content "{}" not found'.format(_version.hash))
+        try:
+            path.parent.mkdir(parents=True)
+        except FileExistsError:
+            pass
+        shutil.copyfile(address.abspath, str(path))
+        return path
+
     def get_versions(self, path):
         '''
-        Get the stored versions of file.
+        Get the stored versions of a file.
 
         Yields an instance of ``Version`` for each stored version of the
         given file.
@@ -202,4 +261,27 @@ class Store:
         with self._session_scope() as session:
             for _version in session.query(_Version).filter_by(path=path):
                 yield Version(_version, self)
+
+    def get_version_at(self, path, at):
+        '''
+        Get the stored version of a file at a certain point in time.
+
+        ``path`` is the path of the file.
+
+        ``at`` is a ``datetime.datetime`` object.
+
+        Returns the oldest available version before ``at`` as a
+        ``Version`` instance, or ``None`` if no version before that
+        moment is available.
+        '''
+        path = make_path_absolute(path)
+        with self._session_scope() as session:
+            _version = session.query(_Version) \
+                              .filter(_Version.path == path) \
+                              .filter(_Version.stored_at <= at) \
+                              .order_by(_Version.stored_at.desc()) \
+                              .first()
+            if not _version:
+                return None
+            return Version(_version, self)
 

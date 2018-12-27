@@ -1,11 +1,27 @@
 #!/usr/bin/env python3
 
+import datetime
 import os
 from pathlib import Path
+import time
 
-from coba.utils import make_path_absolute
+from coba.utils import (local_to_utc, make_path_absolute, parse_datetime,
+                        utc_to_local)
 
-from .conftest import working_dir
+from .conftest import timezone, working_dir
+
+
+def test_utc_to_local_and_local_to_utc():
+    utc = datetime.datetime.strptime('2018-01-04 12:00', '%Y-%m-%d %H:%M')
+    for tz, local in [
+        ('America/Belize', '2018-01-04 6:00'),
+        ('Australia/Sydney', '2018-01-04 23:00'),
+        ('Europe/Berlin', '2018-01-04 13:00'),
+    ]:
+        local = datetime.datetime.strptime(local, '%Y-%m-%d %H:%M')
+        with timezone(tz):
+            assert utc_to_local(utc).replace(tzinfo=None) == local
+            assert local_to_utc(local).replace(tzinfo=None) == utc
 
 
 class TestMakePathAbsolute:
@@ -40,3 +56,18 @@ class TestMakePathAbsolute:
         with working_dir(temp_dir):
             assert make_path_absolute('x/c/y') == temp_dir / 'x/c/y'
 
+
+class TestParseDatetime:
+    def test_parse_datetime_valid(self):
+        '''
+        Parse valid datetimes.
+        '''
+        now = datetime.datetime.now()
+        for s, dt in [
+            ('2018-01-03 12:54:03', datetime.datetime(2018, 1, 3, 12, 54, 3)),
+            ('2018-01-03 12:54', datetime.datetime(2018, 1, 3, 12, 54, 59)),
+            ('2018-01-03', datetime.datetime(2018, 1, 3, 23, 59, 59)),
+            ('12:54:03', datetime.datetime(now.year, now.month, now.day, 12, 54, 3)),
+            ('12:54',  datetime.datetime(now.year, now.month, now.day, 12, 54, 59)),
+        ]:
+            assert parse_datetime(s) == dt

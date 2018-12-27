@@ -2,9 +2,11 @@
 
 import datetime
 from pathlib import Path
+import time
 from unittest import mock
 
 import pytest
+from sealedmock import seal
 
 from coba.store import Store, Version
 
@@ -108,8 +110,11 @@ class TestStore:
         '''
         test_file = temp_dir / 'test.txt'
         test_file.touch()
+        other_file = temp_dir / 'other.txt'
+        other_file.touch()
         store_path = temp_dir / 'store'
         with Store(store_path) as store:
+            store.put(other_file)
             versions = []
             for i in range(5):
                 version = store.put(test_file)
@@ -127,10 +132,33 @@ class TestStore:
         store_path = temp_dir / 'store'
         test_filename = 'test.txt'
         (temp_dir / test_filename).touch()
+        other_file = temp_dir / 'other.txt'
+        other_file.touch()
         with Store(store_path) as store:
+            store.put(other_file)
             version = store.put(temp_dir / test_filename)
             with working_dir(temp_dir):
                 assert list(store.get_versions(Path(test_filename))) == [version]
+
+    def test_get_version_at(self, temp_dir, store):
+        '''
+        Test ``Store.get_version_at``.
+        '''
+        other_file = temp_dir / 'other.txt'
+        other_file.touch()
+        store.put(other_file)
+        test_file = temp_dir / 'test.txt'
+        test_file.write_text('foo')
+        version1 = store.put(test_file)
+        time.sleep(1.1)
+        test_file.write_text('bar')
+        version2 = store.put(test_file)
+        at1 = version1.stored_at - datetime.timedelta(minutes=1)
+        at2 = version1.stored_at + (version2.stored_at - version1.stored_at) / 2
+        at3 = version2.stored_at + datetime.timedelta(minutes=1)
+        assert store.get_version_at(test_file, at1) is None
+        assert store.get_version_at(test_file, at2) == version1
+        assert store.get_version_at(test_file, at3) == version2
 
 
 class TestVersion:
@@ -161,4 +189,118 @@ class TestVersion:
         assert version2 != version1
         _version2.y = 'foo'
         assert version1 == version2
+
+    def test_restore_default_arguments_existing_file(self, store, temp_dir):
+        '''
+        Default arguments of ``restore`` with an existing file.
+        '''
+        test_file = temp_dir / 'test.txt'
+        test_file.write_text('foo')
+        version = store.put(test_file)
+        with pytest.raises(FileExistsError):
+            version.restore()
+
+    def test_restore_default_arguments_non_existing_file(self, store, temp_dir):
+        '''
+        Default arguments of ``restore`` with an non-existing file.
+        '''
+        test_file = temp_dir / 'test.txt'
+        test_file.write_text('foo')
+        version = store.put(test_file)
+        test_file.unlink()
+        result = version.restore()
+        assert result == test_file
+        assert test_file.read_text() == 'foo'
+
+    def test_restore_relative_path(self, store, temp_dir):
+        '''
+        Passing a relative path to ``restore``.
+        '''
+        test_file = temp_dir / 'test.txt'
+        test_file.write_text('foo')
+        version = store.put(test_file)
+        with working_dir(temp_dir):
+            result = version.restore('x')
+        assert result == temp_dir / 'x'
+        assert result.read_text() == 'foo'
+
+    def test_restore_unknown_hash(self, store):
+        '''
+        Passing a version with unknown hash to ``restore``.
+        '''
+        _version = mock.Mock()
+        _version.hash = 'does-not-exist'
+        _version.path = Path('/foo/bar')
+        with pytest.raises(ValueError):
+            Version(_version, store).restore()
+
+    def test_restore_existing_file_force_false(self, store, temp_dir):
+        '''
+        Restore a version at an existing file without force.
+        '''
+        _version = mock.Mock()
+        _version.path = temp_dir / 'test.txt'
+        _version.path.touch()
+        with pytest.raises(FileExistsError):
+            Version(_version, store).restore()
+
+    def test_restore_existing_file_force_true(self, store, temp_dir):
+        '''
+        Restore a version at an existing file with force.
+        '''
+        test_file = temp_dir / 'test.txt'
+        test_file.write_text('foo')
+        version = store.put(test_file)
+        test_file.write_text('bar')
+        version.restore(force=True)
+        assert test_file.read_text() == 'foo'
+
+    def test_restore_existing_directory(self, store, temp_dir):
+        '''
+        Restore a version at an existing directory.
+        '''
+        test_file = temp_dir / 'test.txt'
+        test_file.write_text('foo')
+        version = store.put(test_file)
+        sub_dir = temp_dir / 'subdir'
+        sub_dir.mkdir()
+        result = version.restore(sub_dir)
+        target_path = sub_dir / 'test.txt'
+        assert result == target_path
+        assert target_path.read_text() == 'foo'
+
+    def test_restore_existing_file_in_existing_directory_force_false(self,
+                                                                     store,
+                                                                     temp_dir):
+        '''
+        Restore a version at an existing file in an existing directory
+        without force.
+        '''
+        test_file = temp_dir / 'test.txt'
+        test_file.write_text('foo')
+        version = store.put(test_file)
+        sub_dir = temp_dir / 'subdir'
+        sub_dir.mkdir()
+        target_path = sub_dir / 'test.txt'
+        target_path.touch()
+        with pytest.raises(FileExistsError):
+            version.restore(sub_dir)
+
+    def test_restore_existing_file_in_existing_directory_force_true(self,
+                                                                    store,
+                                                                    temp_dir):
+        '''
+        Restore a version at an existing file in an existing directory
+        with force.
+        '''
+        test_file = temp_dir / 'test.txt'
+        test_file.write_text('foo')
+        version = store.put(test_file)
+        sub_dir = temp_dir / 'subdir'
+        sub_dir.mkdir()
+        target_path = sub_dir / 'test.txt'
+        target_path.write_text('bar')
+        result = version.restore(sub_dir, force=True)
+        assert result == target_path
+        assert target_path.read_text() == 'foo'
 
