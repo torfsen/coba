@@ -8,6 +8,8 @@ argh==0.26.2              # via watchdog
 click==7.0
 hashfs==0.7.1
 pathtools==0.1.2          # via watchdog
+python-dateutil==2.7.5
 pyyaml==3.13              # via watchdog
+six==1.12.0               # via python-dateutil
 sqlalchemy==1.2.14
 watchdog==0.9.0
