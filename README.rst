@@ -14,6 +14,11 @@ primary backup system. It will probably corrupt your data, break your
 heart and eat your homework. You have been warned.*
 
 
+Change Log
+==========
+See the file ``CHANGELOG.md``.
+
+
 License
 =======
 
