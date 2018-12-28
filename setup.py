@@ -1,6 +1,6 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
-# Copyright (c) 2014 Florian Brucker
+# Copyright (c) 2018 Florian Brucker (mail@florianbrucker.de).
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -20,84 +20,61 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-import codecs
-import os.path
-import pydoc
+from pathlib import Path
 import re
-import sys
 
-from setuptools import find_packages, setup
+from setuptools import setup, find_packages
 
-HERE = os.path.dirname(__file__)
-SOURCE_FILE = os.path.join(HERE, 'src', 'coba', '__init__.py')
 
-version = None
-in_doc_str = False
-doc_lines = []
-with codecs.open(SOURCE_FILE, encoding='utf8') as f:
+HERE = Path(__file__).resolve().parent
+
+# Read __version__ from __init__.py
+INIT_PY = HERE / 'coba' / '__init__.py'
+with INIT_PY.open(encoding='utf-8') as f:
     for line in f:
-        s = line.strip()
-        m = re.match(r"""__version__\s*=\s*['"](.*)['"]""", line)
+        line = line.strip()
+        m = re.match(r'''__version__\s*=\s*['"](.*)['"]''', line)
         if m:
             version = m.groups()[0]
-        elif s in ['"""', "'''"]:
-            if in_doc_str:
-                in_doc_str = False
-            elif not doc_lines:
-                in_doc_str = True
-        elif in_doc_str:
-            doc_lines.append(line)
+            break
+    else:
+        raise RuntimeError('Could not extract version from "%s".' % INIT_PY)
 
-if not version:
-    raise RuntimeError('Could not extract version from "%s".' % SOURCE_FILE)
-if not doc_lines:
-    raise RuntimeError('Could not extract doc string from "%s".' % SOURCE_FILE)
+# Read long description from README.rst
+with (HERE / 'README.rst').open(encoding='utf-8') as f:
+    long_description = f.read()
 
-description = doc_lines[0].strip()
-long_description = ''.join(doc_lines[1:]).strip()
-requirements = """
-    apache-libcloud
-    backports.pbkdf2
-    click
-    future
-    pathlib
-    pqdict
-    service
-    watchdog
-""".split()
+# Read dependencies from requirements.in
+with (HERE / 'requirements.in').open(encoding='utf-8') as f:
+    install_requires = list(f.readlines())
 
 setup(
     name='coba',
-    description=description,
-    long_description=long_description,
-    url='https://github.com/torfuspolymorphus/coba',
     version=version,
-    license='MIT',
-    keywords=['backup'],
-    classifiers=[
-        # Reference: http://pypi.python.org/pypi?%3Aaction=list_classifiers
-        "Development Status :: 3 - Alpha",
-        "Intended Audience :: End Users/Desktop",
-        "License :: OSI Approved :: MIT License",
-        "Operating System :: POSIX",
-        "Programming Language :: Python :: 2",
-        "Programming Language :: Python :: 2.7",
-        "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.3",
-        "Programming Language :: Python :: 3.4",
-        "Topic :: System :: Archiving :: Backup",
-    ],
-
+    description='Continuous backups',
+    long_description=long_description,
+    url='https://github.com/torfsen/coba',
     author='Florian Brucker',
     author_email='mail@florianbrucker.de',
-
-    packages=find_packages('src'),
-    package_dir={'': 'src'},
-    install_requires=requirements,
-
-    # Click CLI integration
-    entry_points="""
+    classifiers=[
+        # See https://pypi.org/classifiers/
+        'Development Status :: 3 - Alpha',
+        'Environment :: Console',
+        'Environment :: No Input/Output (Daemon)',
+        'Intended Audience :: End Users/Desktop',
+        'Intended Audience :: System Administrators',
+        'License :: OSI Approved :: MIT License',
+        'Natural Language :: English',
+        'Operating System :: POSIX :: Linux',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3 :: Only',
+        'Topic :: System :: Archiving :: Backup',
+    ],
+    keywords='backup',
+    packages=find_packages('coba'),
+    install_requires=install_requires,
+    entry_points='''
         [console_scripts]
-        coba=coba.cli:main
-    """,
+        coba=coba.__main__:coba
+    ''',
 )

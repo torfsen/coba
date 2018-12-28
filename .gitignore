@@ -1,13 +1,14 @@
-/.coverage
-/.tox
-/build/
-/cover/
-/dist/
-/docs/_build/
-/src/coba.egg-info/
-/test/keys/random_seed
 /venv/
+/sandbox/
+/test-store/
+/.pytest_cache/
+/dist/
+/htmlcov/
 
-*.swp
-*.pyc
-*.gpg~
+/.coverage
+
+__pycache__/
+*.egg-info/
+
+.*.swp
+
