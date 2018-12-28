@@ -148,22 +148,18 @@ class Store:
         ``path`` is the base directory of the file store. If it doesn't
         exist it is created.
         '''
-        self.path = path
+        self.path = make_path_absolute(path)
         self._cas = None
         self._engine = None
         self._Session = None
 
     def __enter__(self):
-        try:
-            self.path = self.path.resolve()
-        except FileNotFoundError:
+        if not self.path.exists():
             self.path.mkdir(parents=True)
-            self.path = self.path.resolve()
             log.debug('Created directory {} for store'.format(self.path))
-        else:
-            if not self.path.is_dir():
-                raise FileExistsError('{} exists but is not a directory'.format(
-                                     self.path))
+        elif not self.path.is_dir():
+            raise FileExistsError('{} exists but is not a directory'.format(
+                                  self.path))
         self._cas = hashfs.HashFS(str(self.path / 'content'), depth=4,
                                   width=1, algorithm='sha1')
         self._init_db()

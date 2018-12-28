@@ -73,7 +73,7 @@ def coba(ctx, store):
     if store:
         store = Path(store)
     else:
-        base = Path(__file__).resolve().parent.parent
+        base = make_path_absolute(Path(__file__)).parent.parent
         store = base / 'test-store'
     ctx.obj['store'] = Store(store)
 
