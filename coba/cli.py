@@ -30,6 +30,7 @@ import click
 import watchdog.observers
 
 from .import EventHandler, FileQueue, __version__ as coba_version
+from .config import Config, DEFAULT_CONFIG
 from .store import Store
 from .utils import (local_to_utc, make_path_absolute, parse_datetime,
                     utc_to_local)
@@ -56,12 +57,18 @@ def _handle_errors(f):
 
 
 @click.group()
-@click.option('--store', envvar='COBA_STORE', type=click.Path(file_okay=False,
-              writable=True))
+@click.option('--config', envvar='COBA_CONFIG', type=click.Path(dir_okay=False,
+              readable=True))
 @click.pass_context
 @_handle_errors
-def coba(ctx, store):
+def coba(ctx, config):
     ctx.ensure_object(dict)
+
+    if config:
+        cfg = Config.from_file(Path(config))
+    else:
+        cfg = DEFAULT_CONFIG
+    ctx.obj['config'] = cfg
 
     ctx.obj['log'] = logging.getLogger('coba')
     formatter = logging.Formatter('%(levelname)s: %(message)s')
@@ -70,12 +77,7 @@ def coba(ctx, store):
     ctx.obj['log'].addHandler(handler)
     ctx.obj['log'].setLevel(logging.DEBUG)
 
-    if store:
-        store = Path(store)
-    else:
-        base = make_path_absolute(Path(__file__)).parent.parent
-        store = base / 'test-store'
-    ctx.obj['store'] = Store(store)
+    ctx.obj['store'] = Store(cfg.store_path)
 
 
 @coba.command()

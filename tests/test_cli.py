@@ -21,9 +21,12 @@
 # THE SOFTWARE.
 
 import datetime
+from pathlib import Path
+import tempfile
 
 from click.testing import CliRunner
 import pytest
+import yaml
 
 from coba.cli import coba
 from coba.utils import utc_to_local
@@ -31,11 +34,24 @@ from coba.utils import utc_to_local
 from .conftest import working_dir
 
 
-# TODO: These tests should use a mock store instead of a real one
+# These tests are supposed both to test the CLI in the sense of unit
+# tests and also to serve as integration tests for the whole Coba
+# system.
 
-def run(args, expect='success'):
+
+def run(args, config=None, expect='success'):
     runner = CliRunner(mix_stderr=False)
-    result = runner.invoke(coba, args, catch_exceptions=False)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_dir = Path(temp_dir)
+        config = config or {
+            'store_path': str(temp_dir / 'store'),
+        }
+        cfg_file = temp_dir / 'coba.yml'
+        cfg_file.write_text(yaml.dump(config), encoding='utf-8')
+        args = ['--config', str(cfg_file)] + args
+        print('Executing {}'.format(args))
+        result = runner.invoke(coba, args, catch_exceptions=False)
+        print('result = {}'.format(result))
     if expect == 'success':
         assert result.exit_code == 0
     elif expect == 'failure':
@@ -43,15 +59,15 @@ def run(args, expect='success'):
     return result
 
 
-def assert_failure(args, msg=None):
-    result = run(args, expect='failure')
+def assert_failure(args, msg=None, config=None):
+    result = run(args, expect='failure', config=config)
     if msg:
         assert msg.lower() in result.stderr.lower()
     assert not result.stdout
 
 
-def check_missing_argument(args):
-    assert_failure(args, 'missing argument')
+def check_missing_argument(args, config=None):
+    assert_failure(args, 'missing argument', config=config)
 
 
 class TestWatch:
@@ -89,7 +105,7 @@ class TestVersions:
         '''
         Run ``versions`` on a file without versions.
         '''
-        result = run(['--store', str(temp_dir), 'versions', '/does/not/exist'])
+        result = run(['versions', '/does/not/exist'])
         assert not result.stdout
 
     def test_one_and_multiple_versions(self, store, temp_dir):
@@ -104,12 +120,13 @@ class TestVersions:
             expected_output = ''.join('{:%Y-%m-%d %H:%M:%S}\n'.format(
                                       utc_to_local(v.stored_at))
                                       for v in versions)
+            config = {'store_path': str(store.path)}
             # Test with absolute path
-            result = run(['--store', str(store.path), 'versions', str(test_file)])
+            result = run(['versions', str(test_file)], config=config)
             assert result.stdout == expected_output
             # Test with relative path
             with working_dir(temp_dir):
-                result = run(['--store', str(store.path), 'versions', 'test.txt'])
+                result = run(['versions', 'test.txt'], config=config)
                 assert result.stdout == expected_output
 
 
@@ -142,10 +159,9 @@ class TestRestore:
         store.put(test_file)
         test_file.unlink()
         when = datetime.datetime.now() + datetime.timedelta(minutes=1)
-        result = run(['--store', str(store.path),
-                      'restore',
-                      '{:%Y-%m-%d %H:%M:%S}'.format(when),
-                      str(test_file)])
+        config = {'store_path': str(store.path)}
+        result = run(['restore', '{:%Y-%m-%d %H:%M:%S}'.format(when),
+                     str(test_file)], config=config)
         assert test_file.read_text() == 'foo'
 
     def test_custom_path(self, store, temp_dir):
@@ -158,11 +174,12 @@ class TestRestore:
         test_file.write_text('bar')
         target_file = temp_dir / 'target.txt'
         when = datetime.datetime.now() + datetime.timedelta(minutes=1)
-        result = run(['--store', str(store.path),
-                      'restore',
+        config = {'store_path': str(store.path)}
+        result = run(['restore',
                       '{:%Y-%m-%d %H:%M:%S}'.format(when),
                       str(test_file),
-                      '--to', str(target_file)])
+                      '--to', str(target_file)],
+                     config=config)
         assert test_file.read_text() == 'bar'
         assert target_file.read_text() == 'foo'
 
@@ -174,9 +191,10 @@ class TestRestore:
         test_file.write_text('foo')
         store.put(test_file)
         when = datetime.datetime.now() + datetime.timedelta(minutes=1)
-        assert_failure(['--store', str(store.path),
-                        'restore',
+        config = {'store_path': str(store.path)}
+        assert_failure(['restore',
                         '{:%Y-%m-%d %H:%M:%S}'.format(when),
                         str(test_file)],
-                       'already exists')
+                       'already exists',
+                       config=config)
 
