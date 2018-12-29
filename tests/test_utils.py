@@ -24,8 +24,10 @@ import datetime
 import os
 from pathlib import Path
 
+import pytest
+
 from coba.utils import (local_to_utc, make_path_absolute, parse_datetime,
-                        utc_to_local)
+                        parse_file_size, utc_to_local)
 
 from .conftest import timezone, working_dir
 
@@ -90,3 +92,45 @@ class TestParseDatetime:
             ('12:54',  datetime.datetime(now.year, now.month, now.day, 12, 54, 59)),
         ]:
             assert parse_datetime(s) == dt
+
+
+class TestParseFileSize:
+    def test_valid_inputs(self):
+        '''
+        Parse valid file sizes.
+        '''
+        for s, expected in [
+            ('0', 0),
+            ('1', 1),
+            ('45', 45),
+            ('898905472098', 898905472098),
+            ('0k', 0),
+            ('1 K', 1024),
+            ('1432K', 1466368),
+            ('5 k', 5120),
+            ('0M', 0),
+            ('99 M', 103809024),
+            ('1m', 1048576),
+            ('54324 m', 56962842624),
+            ('0g', 0),
+            ('1 G', 1073741824),
+            ('54 g', 57982058496),
+            ('85945 G', 92282741063680),
+        ]:
+            assert parse_file_size(s) == expected
+
+    def test_invalid_inputs(self):
+        '''
+        Parse invalid file sizes.
+        '''
+        for s in [
+            '',
+            'm',
+            'G',
+            '1.2 g',
+            '45,32M',
+            '-12',
+            '44 gb',
+        ]:
+            with pytest.raises(ValueError):
+                parse_file_size(s)

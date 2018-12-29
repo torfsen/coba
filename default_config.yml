@@ -1,0 +1,7 @@
+store_path: /var/lib/coba/store
+
+max_file_size: 1 m
+
+ignores:
+    - .*
+

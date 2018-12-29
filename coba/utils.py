@@ -87,3 +87,33 @@ def parse_datetime(s):
         return dt
     raise ValueError('Unknown date/time format "{}"'.format(s))
 
+
+_FILE_SIZE_RE = re.compile(r'^\s*(?P<number>\d+)\s*(?P<unit>[KkMmGg])?\s*$')
+
+_FILE_SIZE_UNIT_EXPONENTS = {
+    'k': 1,
+    'm': 2,
+    'g': 3,
+}
+
+
+def parse_file_size(s):
+    '''
+    Parse a file size from a string.
+
+    ``s`` is a string that contains an integer followed by an optional
+    unit. Supported units are ``k``, ``m``, and ``g`` (in upper or lower
+    case), representing ``1024``, ``1024**2``, and ``1024**3``.
+
+    Returns the parsed number as an ``int``.
+    '''
+    s = s.strip()
+    match = _FILE_SIZE_RE.match(s)
+    if not match:
+        raise ValueError('Invalid file size "{}"'.format(s))
+    number = int(match.group('number'))
+    unit = match.group('unit')
+    if not unit:
+        return number
+    exponent = _FILE_SIZE_UNIT_EXPONENTS[unit.lower()]
+    return number * 1024**exponent

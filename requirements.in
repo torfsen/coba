@@ -3,3 +3,5 @@ hashfs>=0.7.1
 SQLAlchemy>=1.2.13
 Click>=7.0
 python-dateutil==2.7.5
+PyYAML==3.13
+pathspec==0.5.9

@@ -1,5 +1,6 @@
-include requirements.in
-include README.rst
-include LICENSE
 include CHANGELOG.md
+include default_config.yml
+include LICENSE
+include README.rst
+include requirements.in
 
